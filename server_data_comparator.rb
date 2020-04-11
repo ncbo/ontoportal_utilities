@@ -37,7 +37,8 @@ end
 
 def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   comp_servers = Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
-  endpoint_url = lambda { |server, class_id| server + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} + '/' + CGI.escape(class_id) }
+  classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} }
+  class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
   puts_and_log("\n")
 
   comp_servers.each do |duo|
@@ -57,6 +58,8 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
           matched = false
           diffs = set1.merge(set2) { |_k, v1, v2| v1 == v2 ? nil : :different }.compact
           puts_and_log("\n#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}. Differences:")
+          puts_and_log(classes_endpoint_url.call(duo[0]))
+          puts_and_log(classes_endpoint_url.call(duo[1]))
           puts_and_log(JSON.pretty_generate(diffs))
         end
       elsif set1.values[0].is_a?(Array)
@@ -67,15 +70,15 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
             unless diffs.empty?
               matched = false
               puts_and_log("\n#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
-              puts_and_log(endpoint_url.call(duo[0], id1))
-              puts_and_log(endpoint_url.call(duo[1], id1))
+              puts_and_log(class_endpoint_url.call(duo[0], id1))
+              puts_and_log(class_endpoint_url.call(duo[1], id1))
               puts_and_log('Differences:')
               puts_and_log(JSON.pretty_generate(diffs))
             end
           else
             matched = false
             puts_and_log("\n#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
-            puts_and_log(endpoint_url.call(duo[1], id1))
+            puts_and_log(class_endpoint_url.call(duo[1], id1))
           end
         end
       end
