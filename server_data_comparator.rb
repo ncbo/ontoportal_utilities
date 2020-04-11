@@ -177,9 +177,10 @@ end
 def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
   bp_classes = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, total_count: 0, classes: {}, error: '' }
   params = { no_links: true, no_context: true, pagesize: how_many, display: 'prefLabel,synonym,definition,properties,submission' }
+  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}
 
   begin
-    response_raw = RestClient.get(base_rest_url + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: params})
+    response_raw = RestClient.get(endpoint_url, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: params})
 
     if response_raw.code == RESPONSE_OK
       response = MultiJson.load(response_raw)
@@ -190,10 +191,13 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM
         response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
       end
     else
-      raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}} endpoint. Response code: #{response_raw.code}."
+      raise Exception, "Unable to query BioPortal #{endpoint_url} endpoint. Response code: #{response_raw.code}."
     end
   rescue RestClient::NotFound
-    bp_classes[:error] = "Ontology #{ontology_acronym} not found on server #{base_rest_url}"
+    bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} not found on server #{base_rest_url}"
+  rescue RestClient::Exceptions::ReadTimeout => e
+    e.message << ": #{endpoint_url}"
+    raise e
   end
   bp_classes
 end
