@@ -196,7 +196,7 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM
   rescue RestClient::NotFound
     bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}"
   rescue RestClient::Exceptions::ReadTimeout => e
-    e.message << ": #{endpoint_url}"
+    e.message = "#{e.message}: #{endpoint_url}"
     raise e
   end
   bp_classes
