@@ -15,8 +15,10 @@ Retrieves a given number of classes from a set of API servers and compares the r
 ### Execution:
 The script accepts the following parameters (all are OPTIONAL):
 <pre>
-    -o, ACR1,ACR2,ACR3 OR NUM   Either an optional comma-separated list of ontologies to test OR an optional number of RANDOM ontologies to test
-        --ont                   Default: 10 random ontologies
+    -o, ACR1,ACR2,ACR3 OR NUM   An optional comma-separated list of ontologies to test 
+        --ont                   OR 
+                                An optional number of RANDOM ontologies to test
+                                Default: 10 random ontologies
         
     -c  NUM (integer > 0)       Optional number of classes to test per ontology
         --classes               Default: 30
