@@ -2,13 +2,11 @@ require 'multi_json'
 require 'pry'
 require 'rest-client'
 require 'optparse'
-require 'benchmark'
-require 'pp'
 require_relative 'lib/config'
 
 RESPONSE_OK = 200
-TEST_NUM_ONTOLOGIES = 10
-TEST_NUM_CLASSES_PER_ONTOLOGY = 30
+DEF_TEST_NUM_ONTOLOGIES = 10
+DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 30
 @options = nil
 @logger = nil
 
@@ -18,10 +16,11 @@ def main
   FileUtils.mkdir_p(dirname) unless File.directory?(dirname)
   @logger = Logger.new(@options[:log_file])
   puts "Logging output to #{@options[:log_file]}\n\n"
-  @options[:ontologies] = random_bp_ontologies if @options[:ontologies].empty?
-  puts_and_log("Testing ontologies #{@options[:ontologies]}\n\n")
+  ont_to_test = @options[:ontologies].empty? || !number_or_nil(@options[:ontologies].join(',')).nil? ? \
+      random_bp_ontologies : @options[:ontologies]
+  puts_and_log("Testing ontologies #{ont_to_test}\n\n")
 
-  @options[:ontologies].each do |ontology_acronym|
+  ont_to_test.each do |ontology_acronym|
     class_artifacts = ontology_class_artifacts(ontology_acronym)
 
     if class_artifacts[:error].empty?
@@ -81,25 +80,23 @@ end
 
 def random_bp_ontologies
   bp_ont = bp_ontologies
-  test_indicies = random_numbers(TEST_NUM_ONTOLOGIES, 0, bp_ont.length - 1)
+  num_ont = number_or_nil(@options[:ontologies].join(',')) || DEF_TEST_NUM_ONTOLOGIES
+  test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
   test_indicies.map { |ind| bp_ont.keys[ind] }
 end
 
 def ontology_class_artifacts(ontology_acronym)
+  bp_classes = nil
   total_counts = {}
   pref_labels = {}
   synonyms = {}
   definitions = {}
 
-  Global.config.servers_to_compare.each do |server|
-    bp_classes = nil
-
-    time = Benchmark.realtime do
-      bp_classes = bp_ontology_classes(server, ontology_acronym, TEST_NUM_CLASSES_PER_ONTOLOGY)
-    end
+  Global.config.servers_to_compare[0..0].each do |server|
+    bp_classes = bp_ontology_classes(server, ontology_acronym, DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
 
     if bp_classes[:error].empty?
-      puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server} in #{time.round(2)} seconds.")
+      puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}.")
 
       total_counts[server] = bp_classes[:total_count]
       pref_labels[server] = {}
@@ -115,6 +112,28 @@ def ontology_class_artifacts(ontology_acronym)
       return { error: bp_classes[:error] }
     end
   end
+
+  Global.config.servers_to_compare[1..-1].each do |server|
+    total_ct = 0
+    pref_labels[server] = {}
+    synonyms[server] = {}
+    definitions[server] = {}
+
+    bp_classes[:classes].each do |id, _|
+      bp_class = bp_ontology_class(server, ontology_acronym, id)
+
+      if bp_class[:error].empty?
+        total_ct += 1
+        pref_labels[server][id] = bp_class[:class]['prefLabel']
+        synonyms[server][id] = bp_class[:class]['synonym'].sort
+        definitions[server][id] = bp_class[:class]['definition'].sort
+      else
+        puts_and_log(bp_class[:error])
+      end
+    end
+    total_counts[server] = total_ct
+  end
+
   { total_counts: total_counts, pref_labels: pref_labels, synonyms: synonyms, definitions: definitions, error: '' }
 end
 
@@ -122,7 +141,7 @@ def random_numbers(how_many, min = 0, max = 20)
   (min..max).to_a.sort { rand - 0.5 }[0..how_many - 1]
 end
 
-def get_acronym_from_id(id)
+def acronym_from_id(id)
   id.to_s.split('/')[-1]
 end
 
@@ -136,11 +155,10 @@ def bp_ontologies
   else
     raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}."
   end
-
   bp_ontologies
 end
 
-def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = 50)
+def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
   bp_classes = { server: base_rest_url, ont: ontology_acronym, total_count: 0, classes: {}, error: '' }
   params = { no_links: true, no_context: true, pagesize: how_many, display: 'prefLabel,synonym,definition,properties' }
 
@@ -149,6 +167,7 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = 50)
 
     if response_raw.code == RESPONSE_OK
       response = MultiJson.load(response_raw)
+
       if response['collection'] && response['collection'].is_a?(Array) && !response['collection'].empty?
         response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
         bp_classes[:total_count] = response['totalCount'].to_i
@@ -162,20 +181,40 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = 50)
   bp_classes
 end
 
+def bp_ontology_class(base_rest_url, ontology_acronym, class_id)
+  bp_class = { server: base_rest_url, ont: ontology_acronym, class: {}, error: '' }
+  params = { no_links: true, no_context: true, display: 'prefLabel,synonym,definition,properties' }
+  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} + '/' + CGI.escape(class_id)
+
+  begin
+    response_raw = RestClient.get(endpoint_url, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: params})
+
+    if response_raw.code == RESPONSE_OK
+      response = MultiJson.load(response_raw)
+      bp_class[:class] = response
+    else
+      raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}} endpoint. Response code: #{response_raw.code}."
+    end
+  rescue RestClient::NotFound
+    bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}: #{endpoint_url}"
+  end
+  bp_class
+end
+
 def find_class_in_bioportal(class_id)
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: class_id, require_exact_match: true, no_context: true}})
-  term = false
+  bp_class = false
 
   if response_raw.code === RESPONSE_OK
     response = MultiJson.load(response_raw)
 
     if response['totalCount'] > 0
-      term = response['collection'][0]
+      bp_class = response['collection'][0]
     end
   else
     raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}."
   end
-  term
+  bp_class
 end
 
 def parse_options
@@ -189,8 +228,8 @@ def parse_options
       options[:log_file] = v
     }
 
-    opts.on('-o', '--ontologies ACR1,ACR2,ACR3', "Optional comma-separated list of ontologies to test (default: #{TEST_NUM_ONTOLOGIES} random ontologies)") do |acronyms|
-      options[:ontologies] = acronyms.split(",").map {|o| o.strip}
+    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR N", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional integer number of random ontologies to test.") do |acronyms|
+      options[:ontologies] = acronyms.split(",").map { |o| o.strip }
     end
 
     opts.on('-h', '--help', 'Display this screen') do
@@ -213,6 +252,12 @@ def puts_and_log(msg, type='info')
   else
     @logger.info(msg)
   end
+end
+
+def number_or_nil(str)
+  Integer(str || '')
+rescue ArgumentError
+  nil
 end
 
 main
