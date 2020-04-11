@@ -78,6 +78,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
           else
             matched = false
             puts_and_log("\n#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
+            puts_and_log(class_endpoint_url.call(duo[0], id1))
             puts_and_log(class_endpoint_url.call(duo[1], id1))
           end
         end
@@ -252,7 +253,7 @@ def parse_options
   options
 end
 
-def puts_and_log(msg, type='info')
+def puts_and_log(msg, type = 'info')
   puts msg
   case type
   when 'warn'
