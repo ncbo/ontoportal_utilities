@@ -37,6 +37,8 @@ end
 
 def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   comp_servers = Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
+  endpoint_url = lambda { |server, class_id| server + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} + '/' + CGI.escape(class_id) }
+  puts_and_log("\n")
 
   comp_servers.each do |duo|
     matched = true
@@ -64,12 +66,16 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
 
             unless diffs.empty?
               matched = false
-              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}. Differences:")
+              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
+              puts_and_log(endpoint_url.call(duo[0], id1))
+              puts_and_log(endpoint_url.call(duo[1], id1))
+              puts_and_log('Differences:')
               puts_and_log(JSON.pretty_generate(diffs))
             end
           else
             matched = false
-            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}.")
+            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
+            puts_and_log(endpoint_url.call(duo[1], id1))
           end
         end
       end
@@ -92,13 +98,13 @@ def ontology_class_artifacts(ontology_acronym)
   synonyms = {}
   definitions = {}
 
-  Global.config.servers_to_compare[0..0].each do |server|
-    bp_classes = bp_ontology_classes(server, ontology_acronym, DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
+  Global.config.servers_to_compare.each_with_index do |server, row_index|
+    bp_classes = bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
 
     if bp_classes[:error].empty?
       puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}.")
-
       total_counts[server] = bp_classes[:total_count]
+      next if row_index > 0
       pref_labels[server] = {}
       synonyms[server] = {}
       definitions[server] = {}
@@ -114,7 +120,6 @@ def ontology_class_artifacts(ontology_acronym)
   end
 
   Global.config.servers_to_compare[1..-1].each do |server|
-    total_ct = 0
     pref_labels[server] = {}
     synonyms[server] = {}
     definitions[server] = {}
@@ -123,7 +128,6 @@ def ontology_class_artifacts(ontology_acronym)
       bp_class = bp_ontology_class(server, ontology_acronym, id)
 
       if bp_class[:error].empty?
-        total_ct += 1
         pref_labels[server][id] = bp_class[:class]['prefLabel']
         synonyms[server][id] = bp_class[:class]['synonym'].sort
         definitions[server][id] = bp_class[:class]['definition'].sort
@@ -131,7 +135,6 @@ def ontology_class_artifacts(ontology_acronym)
         puts_and_log(bp_class[:error])
       end
     end
-    total_counts[server] = total_ct
   end
 
   { total_counts: total_counts, pref_labels: pref_labels, synonyms: synonyms, definitions: definitions, error: '' }
@@ -218,7 +221,7 @@ def find_class_in_bioportal(class_id)
 end
 
 def parse_options
-  options = { ontologies: [] }
+  options = { ontologies: [], num_classes: DEF_TEST_NUM_CLASSES_PER_ONTOLOGY}
   script_name = 'server-data-comparator'
 
   opt_parser = OptionParser.new do |opts|
@@ -228,8 +231,12 @@ def parse_options
       options[:log_file] = v
     }
 
-    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR N", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional integer number of random ontologies to test.") do |acronyms|
+    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR NUM", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional number of random ontologies to test.") do |acronyms|
       options[:ontologies] = acronyms.split(",").map { |o| o.strip }
+    end
+
+    opts.on('-c', '--classes NUM (integer > 0)', "Optional number of classes to to test per ontology (default: #{DEF_TEST_NUM_CLASSES_PER_ONTOLOGY})") do |num|
+      options[:num_classes] = num.to_i
     end
 
     opts.on('-h', '--help', 'Display this screen') do
