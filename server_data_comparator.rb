@@ -122,7 +122,8 @@ def ontology_class_artifacts(ontology_acronym)
       return { error: bp_classes[:error] }
     end
   end
-
+  puts_and_log("Processing. Please wait...")
+  
   Global.config.servers_to_compare[1..-1].each do |server|
     pref_labels[server] = {}
     synonyms[server] = {}
