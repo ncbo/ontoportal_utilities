@@ -56,7 +56,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
         if set1 != set2
           matched = false
           diffs = set1.merge(set2) { |_k, v1, v2| v1 == v2 ? nil : :different }.compact
-          puts_and_log("#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}. Differences:")
+          puts_and_log("\n#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}. Differences:")
           puts_and_log(JSON.pretty_generate(diffs))
         end
       elsif set1.values[0].is_a?(Array)
@@ -66,7 +66,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
 
             unless diffs.empty?
               matched = false
-              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
+              puts_and_log("\n#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
               puts_and_log(endpoint_url.call(duo[0], id1))
               puts_and_log(endpoint_url.call(duo[1], id1))
               puts_and_log('Differences:')
@@ -74,13 +74,13 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
             end
           else
             matched = false
-            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
+            puts_and_log("\n#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
             puts_and_log(endpoint_url.call(duo[1], id1))
           end
         end
       end
     end
-    puts_and_log "#{artifact_name} for #{ontology_acronym} match on servers #{duo[0]} and #{duo[1]}." if matched
+    puts_and_log "\n#{artifact_name} for #{ontology_acronym} match on servers #{duo[0]} and #{duo[1]}." if matched
   end
 end
 
@@ -231,11 +231,11 @@ def parse_options
       options[:log_file] = v
     }
 
-    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR NUM", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional number of random ontologies to test.") do |acronyms|
+    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR NUM", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional number of random ontologies to test") do |acronyms|
       options[:ontologies] = acronyms.split(",").map { |o| o.strip }
     end
 
-    opts.on('-c', '--classes NUM (integer > 0)', "Optional number of classes to to test per ontology (default: #{DEF_TEST_NUM_CLASSES_PER_ONTOLOGY})") do |num|
+    opts.on('-c', '--classes NUM (integer > 0)', "Optional number of classes to test per ontology (default: #{DEF_TEST_NUM_CLASSES_PER_ONTOLOGY})") do |num|
       options[:num_classes] = num.to_i
     end
 
