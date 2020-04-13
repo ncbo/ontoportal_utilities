@@ -25,10 +25,13 @@ def main
 
     if class_artifacts[:error].empty?
       err_condition = compare_artifacts('Submission IDs', ontology_acronym, class_artifacts[:submission_ids])
-      err_condition = compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts]) unless err_condition
-      compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels]) unless err_condition
-      compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms]) unless err_condition
-      compare_artifacts('Definitions', ontology_acronym, class_artifacts[:definitions]) unless err_condition
+      # stop here if submission IDs do not match
+      unless err_condition
+        compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts])
+        compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels])
+        compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms])
+        compare_artifacts('Definitions', ontology_acronym, class_artifacts[:definitions])
+      end
     else
       puts_and_log(class_artifacts[:error])
     end
@@ -107,46 +110,46 @@ def ontology_class_artifacts(ontology_acronym)
   pref_labels = {}
   synonyms = {}
   definitions = {}
+  master_classes = nil
+  missing_ids = []
 
   Global.config.servers_to_compare.each_with_index do |server, row_index|
     bp_classes = bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
+    return { error: bp_classes[:error] } unless bp_classes[:error].empty?
 
-    if bp_classes[:error].empty?
-      puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}.")
-      total_counts[server] = bp_classes[:total_count]
-      submission_ids[server] = bp_classes[:submission_id]
-      next if row_index > 0
+    puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}.")
 
-      pref_labels[server] = {}
-      synonyms[server] = {}
-      definitions[server] = {}
-
-      bp_classes[:classes].each do |id, cls|
-        pref_labels[server][id] = cls['prefLabel']
-        synonyms[server][id] = cls['synonym'].sort
-        definitions[server][id] = cls['definition'].sort
-      end
+    if row_index.zero?
+      master_classes = bp_classes.dup
     else
-      return { error: bp_classes[:error] }
+      m_keys = master_classes[:classes].keys
+      bp_keys = bp_classes[:classes].keys
+      missing_ids = m_keys - bp_keys
+      non_matching_ids = bp_keys - m_keys
+      bp_classes[:classes].reject! { |id, _| non_matching_ids.include?(id) }
+    end
+    total_counts[server] = bp_classes[:total_count]
+    submission_ids[server] = bp_classes[:submission_id]
+    pref_labels[server] = {}
+    synonyms[server] = {}
+    definitions[server] = {}
+
+    bp_classes[:classes].each do |id, cls|
+      pref_labels[server][id] = cls['prefLabel']
+      synonyms[server][id] = cls['synonym'].sort
+      definitions[server][id] = cls['definition'].sort
     end
   end
   puts_and_log("Processing. Please wait...")
 
   Global.config.servers_to_compare[1..-1].each do |server|
-    pref_labels[server] = {}
-    synonyms[server] = {}
-    definitions[server] = {}
-
-    bp_classes[:classes].each do |id, _|
+    missing_ids.each do |id|
       bp_class = bp_ontology_class(server, ontology_acronym, id)
+      return { error: bp_class[:error] } unless bp_class[:error].empty?
 
-      if bp_class[:error].empty?
-        pref_labels[server][id] = bp_class[:class]['prefLabel']
-        synonyms[server][id] = bp_class[:class]['synonym'].sort
-        definitions[server][id] = bp_class[:class]['definition'].sort
-      else
-        puts_and_log(bp_class[:error])
-      end
+      pref_labels[server][id] = bp_class[:class]['prefLabel']
+      synonyms[server][id] = bp_class[:class]['synonym'].sort
+      definitions[server][id] = bp_class[:class]['definition'].sort
     end
   end
 
