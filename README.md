@@ -21,7 +21,7 @@ The script accepts the following parameters (all are OPTIONAL):
                                 Default: 10 random ontologies
         
     -c  NUM (integer > 0)       Optional number of classes to test per ontology
-        --classes               Default: 30
+        --classes               Default: 300
      
     -l, PATH_TO_LOG_FILE        Optional path to the log file        
         --log                   Default: logs/server_data_comparator-run.log

@@ -6,7 +6,7 @@ require_relative 'lib/config'
 
 RESPONSE_OK = 200
 DEF_TEST_NUM_ONTOLOGIES = 10
-DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 30
+DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 300
 @options = nil
 @logger = nil
 
