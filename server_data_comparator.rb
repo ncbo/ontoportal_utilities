@@ -165,7 +165,7 @@ def bp_ontologies
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
   bp_ontologies = {}
 
-  if response_raw.code === RESPONSE_OK
+  if response_raw.code == RESPONSE_OK
     response = MultiJson.load(response_raw)
     response.each {|ont| bp_ontologies[ont['acronym']] = ont['name']}
   else
@@ -227,7 +227,7 @@ def find_class_in_bioportal(class_id)
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: class_id, require_exact_match: true, no_context: true}})
   bp_class = false
 
-  if response_raw.code === RESPONSE_OK
+  if response_raw.code == RESPONSE_OK
     response = MultiJson.load(response_raw)
 
     if response['totalCount'] > 0
@@ -241,7 +241,7 @@ end
 
 def parse_options
   options = { ontologies: [], num_classes: DEF_TEST_NUM_CLASSES_PER_ONTOLOGY}
-  script_name = 'server-data-comparator'
+  script_name = 'server_data_comparator'
 
   opt_parser = OptionParser.new do |opts|
     opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
