@@ -150,8 +150,8 @@ def ontology_class_artifacts(ontology_acronym)
       return { error: bp_class[:error] } unless bp_class[:error].empty?
 
       pref_labels[server][id] = bp_class[:class]['prefLabel']
-      synonyms[server][id] = bp_class[:class]['synonym'].sort
-      definitions[server][id] = bp_class[:class]['definition'].sort
+      synonyms[server][id] = bp_class[:class]['synonym'].map(&:to_s).sort
+      definitions[server][id] = bp_class[:class]['definition'].map(&:to_s).sort
     end
   end
 
