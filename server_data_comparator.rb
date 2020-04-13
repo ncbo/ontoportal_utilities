@@ -18,15 +18,17 @@ def main
   puts "Logging output to #{@options[:log_file]}\n\n"
   ont_to_test = @options[:ontologies].empty? || !number_or_nil(@options[:ontologies].join(',')).nil? ? \
       random_bp_ontologies : @options[:ontologies]
-  puts_and_log("Testing ontologies #{ont_to_test}\n\n")
+  puts_and_log("Testing ontologies #{ont_to_test}")
+  puts_and_log("Proceeding with ALL checks even if Submission IDs are mismatched") if @options[:ignore_ids]
+  puts_and_log("\n\n")
 
   ont_to_test.each do |ontology_acronym|
     class_artifacts = ontology_class_artifacts(ontology_acronym)
 
     if class_artifacts[:error].empty?
       err_condition = compare_artifacts('Submission IDs', ontology_acronym, class_artifacts[:submission_ids])
-      # stop here if submission IDs do not match
-      unless err_condition
+      # stop here if submission IDs do not match (unless overridden by the parameter)
+      if !err_condition || @options[:ignore_ids]
         compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts])
         compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels])
         compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms])
@@ -41,7 +43,7 @@ end
 
 def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   comp_servers = Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
-  classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} }
+  classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
   class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
   err_condition = false
   puts_and_log("\n")
@@ -136,8 +138,8 @@ def ontology_class_artifacts(ontology_acronym)
 
     bp_classes[:classes].each do |id, cls|
       pref_labels[server][id] = cls['prefLabel']
-      synonyms[server][id] = cls['synonym'].sort
-      definitions[server][id] = cls['definition'].sort
+      synonyms[server][id] = cls['synonym'].map(&:to_s).sort
+      definitions[server][id] = cls['definition'].map(&:to_s).sort
     end
   end
   puts_and_log("Processing. Please wait...")
@@ -165,7 +167,7 @@ def id_or_acronym_from_uri(uri)
 end
 
 def bp_ontologies
-  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {no_links: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { no_links: true, no_context: true } })
   bp_ontologies = {}
 
   if response_raw.code == RESPONSE_OK
@@ -180,10 +182,10 @@ end
 def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
   bp_classes = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, total_count: 0, classes: {}, error: '' }
   params = { no_links: true, no_context: true, pagesize: how_many, display: 'prefLabel,synonym,definition,properties,submission' }
-  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}
+  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }
 
   begin
-    response_raw = RestClient.get(endpoint_url, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: params})
+    response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
 
     if response_raw.code == RESPONSE_OK
       response = MultiJson.load(response_raw)
@@ -208,17 +210,17 @@ end
 def bp_ontology_class(base_rest_url, ontology_acronym, class_id)
   bp_class = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, class: {}, error: '' }
   params = { no_links: true, no_context: true, display: 'prefLabel,synonym,definition,properties,submission' }
-  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym} + '/' + CGI.escape(class_id)
+  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } + '/' + CGI.escape(class_id)
 
   begin
-    response_raw = RestClient.get(endpoint_url, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: params})
+    response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
 
     if response_raw.code == RESPONSE_OK
       response = MultiJson.load(response_raw)
       bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
       bp_class[:class] = response
     else
-      raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % {ontology_acronym: ontology_acronym}} endpoint. Response code: #{response_raw.code}."
+      raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }} endpoint. Response code: #{response_raw.code}."
     end
   rescue RestClient::NotFound
     bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}: #{endpoint_url}"
@@ -227,7 +229,7 @@ def bp_ontology_class(base_rest_url, ontology_acronym, class_id)
 end
 
 def find_class_in_bioportal(class_id)
-  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, {Authorization: "apikey token=#{Global.config.bp_api_key}", params: {q: class_id, require_exact_match: true, no_context: true}})
+  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { q: class_id, require_exact_match: true, no_context: true } })
   bp_class = false
 
   if response_raw.code == RESPONSE_OK
@@ -243,17 +245,18 @@ def find_class_in_bioportal(class_id)
 end
 
 def parse_options
-  options = { ontologies: [], num_classes: DEF_TEST_NUM_CLASSES_PER_ONTOLOGY}
   script_name = 'server_data_comparator'
+  options = {
+      ontologies: [],
+      num_classes: DEF_TEST_NUM_CLASSES_PER_ONTOLOGY,
+      ignore_ids: false,
+      log_file: Global.config.default_log_file_path % { script_name: script_name }
+  }
 
   opt_parser = OptionParser.new do |opts|
-    opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
+    opts.banner = "Usage: ruby #{File.basename(__FILE__)} [options]"
 
-    opts.on('-l', '--log PATH_TO_LOG_FILE', "Optional path to the log file (default: #{Global.config.default_log_file_path % {script_name: script_name}})") { |v|
-      options[:log_file] = v
-    }
-
-    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR NUM", "Either an optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies) OR an optional number of random ontologies to test") do |acronyms|
+    opts.on('-o', "--ont ACR1,ACR2,ACR3 OR NUM", "An optional comma-separated list of ontologies to test (default: #{DEF_TEST_NUM_ONTOLOGIES} random ontologies)\n#{"\s"*37}OR\n#{"\s"*37}An optional number of random ontologies to test") do |acronyms|
       options[:ontologies] = acronyms.split(",").map { |o| o.strip }
     end
 
@@ -261,13 +264,21 @@ def parse_options
       options[:num_classes] = num.to_i
     end
 
+    opts.on('-i', '--ignore_ids', "Ignore the fact that Submission IDs are different between servers and proceed with ALL checks\n#{"\s"*37}(default: if Submission IDs are different, further checks NOT PERFORMED)") do
+      options[:ignore_ids] = true
+    end
+
+    opts.on('-l', '--log PATH_TO_LOG_FILE', "Optional path to the log file (default: #{Global.config.default_log_file_path % { script_name: script_name }})") { |path|
+      options[:log_file] = path
+    }
+
     opts.on('-h', '--help', 'Display this screen') do
       puts opts
       exit
     end
   end
   opt_parser.parse!
-  options[:log_file] ||= Global.config.default_log_file_path % {script_name: script_name}
+  options[:log_file] ||= :Global.config.default_log_file_path % { script_name: script_name }
   options
 end
 
