@@ -16,13 +16,12 @@ def main
   FileUtils.mkdir_p(dirname) unless File.directory?(dirname)
   @logger = Logger.new(@options[:log_file])
   puts "Logging output to #{@options[:log_file]}\n\n"
-  ont_to_test = @options[:ontologies].empty? || !number_or_nil(@options[:ontologies].join(',')).nil? ? \
-      random_bp_ontologies : @options[:ontologies]
-  puts_and_log("Testing ontologies #{ont_to_test}")
+  ont_to_test = ontologies_to_test
+  puts_and_log("Testing ontologies #{ont_to_test.keys}")
   puts_and_log("Proceeding with ALL checks even if Submission IDs are mismatched") if @options[:ignore_ids]
   puts_and_log("\n")
 
-  ont_to_test.each do |ontology_acronym|
+  ont_to_test.each do |ontology_acronym, ont|
     class_artifacts = ontology_class_artifacts(ontology_acronym)
 
     if class_artifacts[:error].empty?
@@ -101,11 +100,20 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   err_condition
 end
 
-def random_bp_ontologies
-  bp_ont = bp_ontologies
-  num_ont = number_or_nil(@options[:ontologies].join(',')) || DEF_TEST_NUM_ONTOLOGIES
-  test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
-  test_indicies.map { |ind| bp_ont.keys[ind] }
+def ontologies_to_test
+  num_ont = number_or_nil(@options[:ontologies].join(','))
+  ont_to_test = nil
+
+  if num_ont || @options[:ontologies].empty?
+    num_ont ||= DEF_TEST_NUM_ONTOLOGIES
+    bp_ont = bp_ontologies
+    test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
+    acronyms = test_indicies.map { |ind| bp_ont.keys[ind] }
+    ont_to_test = bp_ont.select { |acr, _| acronyms.include?(acr) }
+  else
+    ont_to_test = bp_ontologies(@options[:ontologies])
+  end
+  ont_to_test
 end
 
 def ontology_class_artifacts(ontology_acronym)
@@ -169,13 +177,22 @@ def id_or_acronym_from_uri(uri)
   uri.to_s.split('/')[-1]
 end
 
-def bp_ontologies
-  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { no_links: true, no_context: true } })
-  raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
+def bp_ontologies(acronyms = [])
+  params = { no_links: true, no_context: true, display: 'all' }
+  ex_msg = "Unable to query BioPortal #{Global.config.bp_submissions_endpoint} endpoint on #{Global.config.bp_base_rest_url}"
 
-  bp_ontologies = {}
+  begin
+    response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_submissions_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
+    raise Exception, "#{ex_msg}. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
+  rescue Exception => e
+    e.message = "#{ex_msg}. Exception: #{e.message}"
+    raise e
+  end
   response = MultiJson.load(response_raw)
-  response.each { |ont| bp_ontologies[ont['acronym']] = ont['name'] }
+  bp_ontologies = {}
+  response.each { |ont| bp_ontologies[ont['ontology']['acronym']] = ont if acronyms.empty? || acronyms.include?(ont['ontology']['acronym']) }
+  not_found = acronyms - bp_ontologies.keys
+  not_found.each { |acr| bp_ontologies[acr] = { 'error': "Ontology #{acr} not found on #{Global.config.bp_base_rest_url}" } }
   bp_ontologies
 end
 
@@ -196,9 +213,9 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM
       response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
     end
   rescue RestClient::NotFound
-    bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}"
+    bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}\n\n"
   rescue RestClient::Forbidden
-    bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}"
+    bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}\n\n"
   rescue RestClient::Exceptions::ReadTimeout => e
     e.message = "#{e.message}: #{endpoint_url}"
     raise e
