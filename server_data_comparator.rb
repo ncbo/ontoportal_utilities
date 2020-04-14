@@ -46,7 +46,6 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
   class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
   err_condition = false
-  puts_and_log("\n")
 
   comp_servers.each do |duo|
     matched = true
@@ -57,19 +56,23 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
       if set1 != set2
         matched = false
         err_condition = true
-        puts_and_log "#{artifact_name} for #{ontology_acronym} do not match on servers #{duo[0]} and #{duo[1]}:"
-        puts_and_log(JSON.pretty_generate(artifact_hash))
+        puts_and_log "#{artifact_name} for #{ontology_acronym} DO NOT match on servers #{duo[0]} and #{duo[1]}:"
+        puts_and_log(JSON.pretty_generate(artifact_hash) << "\n\n")
       end
     elsif set1.is_a?(Hash) && !set1.empty?
       if set1.values[0].is_a?(String)
         if set1 != set2
           matched = false
-          diffs = set1.merge(set2) { |_k, v1, v2| v1 == v2 ? nil : :different }.compact
-          puts_and_log("#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}:")
+          diff1_arr = set1.to_a - set2.to_a
+          diff1 = Hash[*diff1_arr.flatten]
+          diff2_arr = set2.to_a - set1.to_a
+          diff2 = Hash[*diff2_arr.flatten]
+          diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
+          puts_and_log("#{artifact_name} for #{ontology_acronym} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
           puts_and_log(classes_endpoint_url.call(duo[0]))
           puts_and_log(classes_endpoint_url.call(duo[1]))
           puts_and_log('Differences:')
-          puts_and_log(JSON.pretty_generate(diffs))
+          puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
         end
       elsif set1.values[0].is_a?(Array)
         set1.each do |id1, coll1|
@@ -78,22 +81,22 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
 
             unless diffs.empty?
               matched = false
-              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
+              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
               puts_and_log(class_endpoint_url.call(duo[0], id1))
               puts_and_log(class_endpoint_url.call(duo[1], id1))
               puts_and_log('Differences:')
-              puts_and_log(JSON.pretty_generate(diffs))
+              puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
             end
           else
             matched = false
-            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
+            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but NONE on server #{duo[1]}:")
             puts_and_log(class_endpoint_url.call(duo[0], id1))
-            puts_and_log(class_endpoint_url.call(duo[1], id1))
+            puts_and_log(class_endpoint_url.call(duo[1], id1) << "\n\n")
           end
         end
       end
     end
-    puts_and_log "\n#{artifact_name} for #{ontology_acronym} match on servers #{duo[0]} and #{duo[1]}." if matched
+    puts_and_log "#{artifact_name} for #{ontology_acronym} match on servers #{duo[0]} and #{duo[1]}\n\n" if matched
   end
   err_condition
 end
@@ -119,7 +122,7 @@ def ontology_class_artifacts(ontology_acronym)
     bp_classes = bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
     return { error: bp_classes[:error] } unless bp_classes[:error].empty?
 
-    puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}.")
+    puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}")
 
     if row_index.zero?
       master_classes = bp_classes.dup
