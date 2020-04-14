@@ -178,7 +178,7 @@ def id_or_acronym_from_uri(uri)
 end
 
 def bp_ontologies(acronyms = [])
-  params = { no_links: true, no_context: true, display: 'all' }
+  params = { no_links: true, no_context: true, display: 'released,creationDate,homepage,publication,documentation,version,description,status,submissionId,submissionStatus,contact,name,email,hasOntologyLanguage,metrics,ontology,administeredBy,acronym,name,summaryOnly,flat,ontologyType,classType,prefLabelProperty,definitionProperty,synonymProperty,authorProperty,hierarchyProperty,obsoleteProperty,obsoleteParent,uri,naturalLanguage,uploadFilePath,diffFilePath,masterFileName,missingImports,pullLocation' }
   ex_msg = "Unable to query BioPortal #{Global.config.bp_submissions_endpoint} endpoint on #{Global.config.bp_base_rest_url}"
 
   begin
@@ -192,7 +192,7 @@ def bp_ontologies(acronyms = [])
   bp_ontologies = {}
   response.each { |ont| bp_ontologies[ont['ontology']['acronym']] = ont if acronyms.empty? || acronyms.include?(ont['ontology']['acronym']) }
   not_found = acronyms - bp_ontologies.keys
-  not_found.each { |acr| bp_ontologies[acr] = { 'error': "Ontology #{acr} not found on #{Global.config.bp_base_rest_url}" } }
+  not_found.each { |acr| bp_ontologies[acr] = { 'error' => "Ontology #{acr} not found on #{Global.config.bp_base_rest_url}" } }
   bp_ontologies
 end
 
