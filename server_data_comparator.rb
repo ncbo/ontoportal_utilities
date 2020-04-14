@@ -37,7 +37,7 @@ def main
     else
       puts_and_log(class_artifacts[:error])
     end
-    puts_and_log("\n" << '─' * 120 << "\n\n")
+    puts_and_log('─' * 120 << "\n\n")
   end
 end
 
