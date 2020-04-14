@@ -21,7 +21,7 @@ The script accepts the following parameters (all are OPTIONAL):
                                 Default: 10 random ontologies
         
     -c  NUM (integer > 0)       Optional number of classes to test per ontology
-        --classes               Default: 300
+        --classes               Default: 500
      
     -i  --ignore_ids            Ignore the fact that Submission IDs are different between servers and proceed with ALL checks
                                 Default: if Submission IDs are different, further checks NOT PERFORMED
@@ -35,16 +35,16 @@ The script accepts the following parameters (all are OPTIONAL):
 Usage: __server_data_comparator.rb [options]__
 
 ### Run Examples:
-#### Test 10 random ontologies with 300 classes from each:
+#### Test 10 random ontologies with 500 classes from each:
 `$ bundle exec ruby server_data_comparator.rb`
 
 #### Test 200 classes from ontologies NCIT, DOID, and BAO:
 `$ bundle exec ruby server_data_comparator.rb -o NCIT,DOID,BAO -c 200`
 
-#### Test 20 random ontologie with 300 classes from each and ignore possible mismatch between Submission IDs:
+#### Test 20 random ontologies with 500 classes from each and ignore possible mismatch between Submission IDs:
 `$ bundle exec ruby server_data_comparator.rb -o 20 -i`
 
-#### Test 20 random ontologies with 800 classes from each:
-`$ bundle exec ruby server_data_comparator.rb -o 20 -c 800`
+#### Test 20 random ontologies with 2000 classes from each:
+`$ bundle exec ruby server_data_comparator.rb -o 20 -c 2000`
 
  

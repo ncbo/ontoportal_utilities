@@ -6,7 +6,7 @@ require_relative 'lib/config'
 
 RESPONSE_OK = 200
 DEF_TEST_NUM_ONTOLOGIES = 10
-DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 300
+DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 500
 @options = nil
 @logger = nil
 
@@ -20,7 +20,7 @@ def main
       random_bp_ontologies : @options[:ontologies]
   puts_and_log("Testing ontologies #{ont_to_test}")
   puts_and_log("Proceeding with ALL checks even if Submission IDs are mismatched") if @options[:ignore_ids]
-  puts_and_log("\n\n")
+  puts_and_log("\n")
 
   ont_to_test.each do |ontology_acronym|
     class_artifacts = ontology_class_artifacts(ontology_acronym)
@@ -65,7 +65,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
         if set1 != set2
           matched = false
           diffs = set1.merge(set2) { |_k, v1, v2| v1 == v2 ? nil : :different }.compact
-          puts_and_log("\n#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}:")
+          puts_and_log("#{artifact_name} for #{ontology_acronym} differ on servers #{duo[0]} and #{duo[1]}:")
           puts_and_log(classes_endpoint_url.call(duo[0]))
           puts_and_log(classes_endpoint_url.call(duo[1]))
           puts_and_log('Differences:')
@@ -78,7 +78,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
 
             unless diffs.empty?
               matched = false
-              puts_and_log("\n#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
+              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} differ on servers #{duo[0]} and #{duo[1]}:")
               puts_and_log(class_endpoint_url.call(duo[0], id1))
               puts_and_log(class_endpoint_url.call(duo[1], id1))
               puts_and_log('Differences:')
@@ -86,7 +86,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
             end
           else
             matched = false
-            puts_and_log("\n#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
+            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but none on server #{duo[1]}:")
             puts_and_log(class_endpoint_url.call(duo[0], id1))
             puts_and_log(class_endpoint_url.call(duo[1], id1))
           end
@@ -142,19 +142,19 @@ def ontology_class_artifacts(ontology_acronym)
       definitions[server][id] = cls['definition'].map(&:to_s).sort
     end
   end
-  puts_and_log("Processing. Please wait...")
+  puts_and_log("Processing. Please wait...\n\n")
 
   Global.config.servers_to_compare[1..-1].each do |server|
     missing_ids.each do |id|
       bp_class = bp_ontology_class(server, ontology_acronym, id)
-      return { error: bp_class[:error] } unless bp_class[:error].empty?
+      puts_and_log("#{bp_class[:error]}\n") unless bp_class[:error].empty?
+      next if bp_class[:class].empty?
 
       pref_labels[server][id] = bp_class[:class]['prefLabel']
       synonyms[server][id] = bp_class[:class]['synonym'].map(&:to_s).sort
       definitions[server][id] = bp_class[:class]['definition'].map(&:to_s).sort
     end
   end
-
   { total_counts: total_counts, submission_ids: submission_ids, pref_labels: pref_labels, synonyms: synonyms, definitions: definitions, error: '' }
 end
 
@@ -168,14 +168,11 @@ end
 
 def bp_ontologies
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_ontologies_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { no_links: true, no_context: true } })
-  bp_ontologies = {}
+  raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
 
-  if response_raw.code == RESPONSE_OK
-    response = MultiJson.load(response_raw)
-    response.each {|ont| bp_ontologies[ont['acronym']] = ont['name']}
-  else
-    raise Exception, "Unable to query BioPortal #{Global.config.bp_ontologies_endpoint} endpoint. Response code: #{response_raw.code}."
-  end
+  bp_ontologies = {}
+  response = MultiJson.load(response_raw)
+  response.each { |ont| bp_ontologies[ont['acronym']] = ont['name'] }
   bp_ontologies
 end
 
@@ -186,20 +183,19 @@ def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM
 
   begin
     response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
+    raise Exception, "Unable to query BioPortal #{endpoint_url} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
 
-    if response_raw.code == RESPONSE_OK
-      response = MultiJson.load(response_raw)
+    response = MultiJson.load(response_raw)
 
-      if response['collection'] && response['collection'].is_a?(Array) && !response['collection'].empty?
-        bp_classes[:submission_id] = id_or_acronym_from_uri(response['collection'][0]['submission']).to_i
-        bp_classes[:total_count] = response['totalCount'].to_i
-        response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
-      end
-    else
-      raise Exception, "Unable to query BioPortal #{endpoint_url} endpoint. Response code: #{response_raw.code}."
+    if response['collection']&.is_a?(Array) && !response['collection'].empty?
+      bp_classes[:submission_id] = id_or_acronym_from_uri(response['collection'][0]['submission']).to_i
+      bp_classes[:total_count] = response['totalCount'].to_i
+      response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
     end
   rescue RestClient::NotFound
     bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}"
+  rescue RestClient::Forbidden
+    bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}"
   rescue RestClient::Exceptions::ReadTimeout => e
     e.message = "#{e.message}: #{endpoint_url}"
     raise e
@@ -214,34 +210,23 @@ def bp_ontology_class(base_rest_url, ontology_acronym, class_id)
 
   begin
     response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
+    raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
 
-    if response_raw.code == RESPONSE_OK
-      response = MultiJson.load(response_raw)
-      bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
-      bp_class[:class] = response
-    else
-      raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }} endpoint. Response code: #{response_raw.code}."
-    end
+    response = MultiJson.load(response_raw)
+    bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
+    bp_class[:class] = response
   rescue RestClient::NotFound
-    bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}: #{endpoint_url}"
+    bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}\n#{endpoint_url}"
   end
   bp_class
 end
 
 def find_class_in_bioportal(class_id)
   response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { q: class_id, require_exact_match: true, no_context: true } })
-  bp_class = false
+  raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
 
-  if response_raw.code == RESPONSE_OK
-    response = MultiJson.load(response_raw)
-
-    if response['totalCount'] > 0
-      bp_class = response['collection'][0]
-    end
-  else
-    raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}."
-  end
-  bp_class
+  response = MultiJson.load(response_raw)
+  response['totalCount'].to_i > 0 ? response['collection'][0] : false
 end
 
 def parse_options
