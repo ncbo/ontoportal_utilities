@@ -5,5 +5,8 @@ default:
   bp_search_endpoint: "/search"
   bp_ontologies_endpoint: "/ontologies"
   bp_submissions_endpoint: "/submissions"
+  bp_latest_submission_endpoint: "/ontologies/%{ontology_acronym}/latest_submission"
+  bp_ontology_metrics_endpoint: "/ontologies/%{ontology_acronym}/metrics"
   bp_classes_endpoint: "/ontologies/%{ontology_acronym}/classes"
+  bp_classes_roots_endpoint: "/ontologies/%{ontology_acronym}/classes/roots"
   servers_to_compare: ["https://data.bioontology.org", "https://stagedata.bioontology.org"]

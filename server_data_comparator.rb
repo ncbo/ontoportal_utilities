@@ -3,6 +3,7 @@ require 'pry'
 require 'rest-client'
 require 'optparse'
 require_relative 'lib/config'
+require_relative 'lib/bp_access'
 
 RESPONSE_OK = 200
 DEF_TEST_NUM_ONTOLOGIES = 10
@@ -20,30 +21,45 @@ def main
   puts_and_log("Testing ontologies #{ont_to_test.keys}")
   puts_and_log("Proceeding with ALL checks even if Submission IDs are mismatched") if @options[:ignore_ids]
   puts_and_log("\n")
+  rec_separator = '─' * 120 << "\n\n"
 
   ont_to_test.each do |ontology_acronym, ont|
-    class_artifacts = ontology_class_artifacts(ontology_acronym)
-
-    if class_artifacts[:error].empty?
-      err_condition = compare_artifacts('Submission IDs', ontology_acronym, class_artifacts[:submission_ids])
-      # stop here if submission IDs do not match (unless overridden by the parameter)
-      if !err_condition || @options[:ignore_ids]
-        compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts])
-        compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels])
-        compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms])
-        compare_artifacts('Definitions', ontology_acronym, class_artifacts[:definitions])
-      end
-    else
-      puts_and_log(class_artifacts[:error])
+    if ont['error']
+      puts_and_log("#{ont['error']}\n\n")
+      puts_and_log(rec_separator)
+      next
     end
-    puts_and_log('─' * 120 << "\n\n")
+    metadata_artifacts = ontology_metadata_artifacts(ontology_acronym)
+    puts_and_log("\n")
+
+    unless metadata_artifacts[:error].empty?
+      puts_and_log("#{metadata_artifacts[:error]}\n\n")
+      next
+    end
+    latest_sub_endpoint_url = lambda { |server| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
+    err_condition = compare_artifacts('Submission IDs', ontology_acronym, metadata_artifacts[:submission_ids], latest_sub_endpoint_url)
+
+    if !err_condition || @options[:ignore_ids]
+      compare_artifacts('Metadata', ontology_acronym, metadata_artifacts[:metadata], latest_sub_endpoint_url)
+      class_artifacts = ontology_class_artifacts(ontology_acronym)
+
+      unless class_artifacts[:error].empty?
+        puts_and_log("#{class_artifacts[:error]}\n\n")
+        next
+      end
+      classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
+      compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts], classes_endpoint_url)
+      compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels], classes_endpoint_url)
+      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
+      compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms], class_endpoint_url)
+      compare_artifacts('Definitions', ontology_acronym, class_artifacts[:definitions], class_endpoint_url)
+    end
+    puts_and_log(rec_separator)
   end
 end
 
-def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
-  comp_servers = Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
-  classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
-  class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
+def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_url)
+  comp_servers = server_permutations
   err_condition = false
 
   comp_servers.each do |duo|
@@ -63,13 +79,13 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
         if set1 != set2
           matched = false
           diff1_arr = set1.to_a - set2.to_a
-          diff1 = Hash[*diff1_arr.flatten]
+          diff1 = Hash[*diff1_arr.flatten].map { |k, v| [k, v.gsub('"', "'")] }.to_h
           diff2_arr = set2.to_a - set1.to_a
-          diff2 = Hash[*diff2_arr.flatten]
+          diff2 = Hash[*diff2_arr.flatten].map { |k, v| [k, v.gsub('"', "'")] }.to_h
           diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
           puts_and_log("#{artifact_name} for #{ontology_acronym} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
-          puts_and_log(classes_endpoint_url.call(duo[0]))
-          puts_and_log(classes_endpoint_url.call(duo[1]))
+          puts_and_log(endpoint_url.call(duo[0]))
+          puts_and_log(endpoint_url.call(duo[1]))
           puts_and_log('Differences:')
           puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
         end
@@ -81,16 +97,16 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
             unless diffs.empty?
               matched = false
               puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
-              puts_and_log(class_endpoint_url.call(duo[0], id1))
-              puts_and_log(class_endpoint_url.call(duo[1], id1))
+              puts_and_log(endpoint_url.call(duo[0], id1))
+              puts_and_log(endpoint_url.call(duo[1], id1))
               puts_and_log('Differences:')
               puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
             end
           else
             matched = false
             puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but NONE on server #{duo[1]}:")
-            puts_and_log(class_endpoint_url.call(duo[0], id1))
-            puts_and_log(class_endpoint_url.call(duo[1], id1) << "\n\n")
+            puts_and_log(endpoint_url.call(duo[0], id1))
+            puts_and_log(endpoint_url.call(duo[1], id1) << "\n\n")
           end
         end
       end
@@ -100,24 +116,48 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash)
   err_condition
 end
 
+def server_permutations
+  Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
+end
+
 def ontologies_to_test
   num_ont = number_or_nil(@options[:ontologies].join(','))
   ont_to_test = nil
 
   if num_ont || @options[:ontologies].empty?
     num_ont ||= DEF_TEST_NUM_ONTOLOGIES
-    bp_ont = bp_ontologies
+    bp_ont = BPAccess.bp_ontologies
     test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
     acronyms = test_indicies.map { |ind| bp_ont.keys[ind] }
     ont_to_test = bp_ont.select { |acr, _| acronyms.include?(acr) }
   else
-    ont_to_test = bp_ontologies(@options[:ontologies])
+    ont_to_test = BPAccess.bp_ontologies(@options[:ontologies])
   end
   ont_to_test
 end
 
+def ontology_metadata_artifacts(ontology_acronym)
+  submission_ids = {}
+  metadata = {}
+  server_variations = Global.config.servers_to_compare.dup
+  server_variations.dup.each { |server| server_variations << (server.start_with?('http://') ? server.sub('http://', 'https://') : server.sub('https://', 'http://')) }
+
+  Global.config.servers_to_compare.each do |server|
+    bp_latest = BPAccess.bp_latest_submission(server, ontology_acronym)
+    return { error: bp_latest[:error] } unless bp_latest[:error].empty?
+
+    puts_and_log("Retrieved latest submission for ontology #{ontology_acronym} from #{server}")
+    submission_ids[server] = bp_latest[:submission_id]
+
+    # convert all values to string for uniform comparison
+    metadata[server] = bp_latest[:submission].map { |k, v| [k, v.to_s] }.to_h
+    # remove any references to the servers from values for comparing
+    metadata[server].each { |_, v| server_variations.each { |var| v.gsub!(var, '') } }
+  end
+  { submission_ids: submission_ids, metadata: metadata, error: '' }
+end
+
 def ontology_class_artifacts(ontology_acronym)
-  bp_classes = nil
   submission_ids = {}
   total_counts = {}
   pref_labels = {}
@@ -127,7 +167,7 @@ def ontology_class_artifacts(ontology_acronym)
   missing_ids = []
 
   Global.config.servers_to_compare.each_with_index do |server, row_index|
-    bp_classes = bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
+    bp_classes = BPAccess.bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
     return { error: bp_classes[:error] } unless bp_classes[:error].empty?
 
     puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}")
@@ -157,7 +197,7 @@ def ontology_class_artifacts(ontology_acronym)
 
   Global.config.servers_to_compare[1..-1].each do |server|
     missing_ids.each do |id|
-      bp_class = bp_ontology_class(server, ontology_acronym, id)
+      bp_class = BPAccess.bp_ontology_class(server, ontology_acronym, id)
       puts_and_log("#{bp_class[:error]}\n") unless bp_class[:error].empty?
       next if bp_class[:class].empty?
 
@@ -171,82 +211,6 @@ end
 
 def random_numbers(how_many, min = 0, max = 20)
   (min..max).to_a.sort { rand - 0.5 }[0..how_many - 1]
-end
-
-def id_or_acronym_from_uri(uri)
-  uri.to_s.split('/')[-1]
-end
-
-def bp_ontologies(acronyms = [])
-  params = { no_links: true, no_context: true, display: 'released,creationDate,homepage,publication,documentation,version,description,status,submissionId,submissionStatus,contact,name,email,hasOntologyLanguage,metrics,ontology,administeredBy,acronym,name,summaryOnly,flat,ontologyType,classType,prefLabelProperty,definitionProperty,synonymProperty,authorProperty,hierarchyProperty,obsoleteProperty,obsoleteParent,uri,naturalLanguage,uploadFilePath,diffFilePath,masterFileName,missingImports,pullLocation' }
-  ex_msg = "Unable to query BioPortal #{Global.config.bp_submissions_endpoint} endpoint on #{Global.config.bp_base_rest_url}"
-
-  begin
-    response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_submissions_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
-    raise Exception, "#{ex_msg}. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
-  rescue Exception => e
-    e.message = "#{ex_msg}. Exception: #{e.message}"
-    raise e
-  end
-  response = MultiJson.load(response_raw)
-  bp_ontologies = {}
-  response.each { |ont| bp_ontologies[ont['ontology']['acronym']] = ont if acronyms.empty? || acronyms.include?(ont['ontology']['acronym']) }
-  not_found = acronyms - bp_ontologies.keys
-  not_found.each { |acr| bp_ontologies[acr] = { 'error' => "Ontology #{acr} not found on #{Global.config.bp_base_rest_url}" } }
-  bp_ontologies
-end
-
-def bp_ontology_classes(base_rest_url, ontology_acronym, how_many = DEF_TEST_NUM_CLASSES_PER_ONTOLOGY)
-  bp_classes = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, total_count: 0, classes: {}, error: '' }
-  params = { no_links: true, no_context: true, pagesize: how_many, display: 'prefLabel,synonym,definition,properties,submission' }
-  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }
-
-  begin
-    response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
-    raise Exception, "Unable to query BioPortal #{endpoint_url} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
-
-    response = MultiJson.load(response_raw)
-
-    if response['collection']&.is_a?(Array) && !response['collection'].empty?
-      bp_classes[:submission_id] = id_or_acronym_from_uri(response['collection'][0]['submission']).to_i
-      bp_classes[:total_count] = response['totalCount'].to_i
-      response['collection'].each {|cls| bp_classes[:classes][cls['@id']] = cls}
-    end
-  rescue RestClient::NotFound
-    bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}\n\n"
-  rescue RestClient::Forbidden
-    bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}\n\n"
-  rescue RestClient::Exceptions::ReadTimeout => e
-    e.message = "#{e.message}: #{endpoint_url}"
-    raise e
-  end
-  bp_classes
-end
-
-def bp_ontology_class(base_rest_url, ontology_acronym, class_id)
-  bp_class = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, class: {}, error: '' }
-  params = { no_links: true, no_context: true, display: 'prefLabel,synonym,definition,properties,submission' }
-  endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } + '/' + CGI.escape(class_id)
-
-  begin
-    response_raw = RestClient.get(endpoint_url, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params })
-    raise Exception, "Unable to query BioPortal #{Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
-
-    response = MultiJson.load(response_raw)
-    bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
-    bp_class[:class] = response
-  rescue RestClient::NotFound
-    bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}\n#{endpoint_url}"
-  end
-  bp_class
-end
-
-def find_class_in_bioportal(class_id)
-  response_raw = RestClient.get(Global.config.bp_base_rest_url + Global.config.bp_search_endpoint, { Authorization: "apikey token=#{Global.config.bp_api_key}", params: { q: class_id, require_exact_match: true, no_context: true } })
-  raise Exception, "Unable to query BioPortal #{Global.config.bp_search_endpoint} endpoint. Response code: #{response_raw.code}." unless response_raw.code == RESPONSE_OK
-
-  response = MultiJson.load(response_raw)
-  response['totalCount'].to_i > 0 ? response['collection'][0] : false
 end
 
 def parse_options
@@ -286,6 +250,7 @@ def parse_options
   options[:log_file] ||= :Global.config.default_log_file_path % { script_name: script_name }
   options
 end
+
 
 def puts_and_log(msg, type = 'info')
   puts msg
