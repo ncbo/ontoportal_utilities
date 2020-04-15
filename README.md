@@ -3,14 +3,16 @@ A set of scripts for benchmarking and troubleshooting issues with OntoPortal
 
 ## Installation
 1. Clone this repo and run `bundle install`
-2. Copy __config/config.yml.sample__ to __config/config.yml__
-3. Edit __config/config.yml__ and replace the following attributes with your own:
-    1. __bp_api_key__: "your-bioportal-api-key"
-   
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BioPortal API key can be found here: https://bioportal.bioontology.org/account
+2. Copy `config/config.yml.sample` to `config/config.yml`
+3. Edit `config/config.yml` and replace the following attributes with your own:
+    1. `bp_api_key: "your-bioportal-api-key"`<br/>
+&nbsp;BioPortal API key can be found here: https://bioportal.bioontology.org/account
+4. If needed, edit the config parameter `servers_to_compare`, adding any number of servers to the array. The performance checks will be run against every combination of two servers in the array.
+    1. `servers_to_compare: ["https://data.bioontology.org", "https://stagedata.bioontology.org"]`<br/>
+
 
 ## Server Data Comparator
-Retrieves a given number of classes from a set of API servers and compares the results.
+Retrieves a given number of ontologies from a set of API servers and compares their metadata and class artifacts.
 
 ### Execution:
 The script accepts the following parameters (all are OPTIONAL):
@@ -32,7 +34,7 @@ The script accepts the following parameters (all are OPTIONAL):
     -h  --help                  Display help screen
 </pre>
 
-Usage: __server_data_comparator.rb [options]__
+Usage: __$ bundle exec ruby server_data_comparator.rb [options]__
 
 ### Run Examples:
 #### Test 10 random ontologies with 500 classes from each:
