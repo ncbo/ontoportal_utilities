@@ -5,7 +5,6 @@ require 'optparse'
 require_relative 'lib/config'
 require_relative 'lib/bp_access'
 
-RESPONSE_OK = 200
 DEF_TEST_NUM_ONTOLOGIES = 10
 DEF_TEST_NUM_CLASSES_PER_ONTOLOGY = 500
 @options = nil
@@ -30,10 +29,12 @@ def main
       next
     end
     metadata_artifacts = ontology_metadata_artifacts(ontology_acronym)
-    puts_and_log("\n")
 
-    unless metadata_artifacts[:error].empty?
+    if metadata_artifacts[:error].empty?
+      puts_and_log("\n")
+    else
       puts_and_log("#{metadata_artifacts[:error]}\n\n")
+      puts_and_log(rec_separator)
       next
     end
     latest_sub_endpoint_url = lambda { |server| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
@@ -45,6 +46,7 @@ def main
 
       unless class_artifacts[:error].empty?
         puts_and_log("#{class_artifacts[:error]}\n\n")
+        puts_and_log(rec_separator)
         next
       end
       classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
@@ -126,12 +128,12 @@ def ontologies_to_test
 
   if num_ont || @options[:ontologies].empty?
     num_ont ||= DEF_TEST_NUM_ONTOLOGIES
-    bp_ont = BPAccess.bp_ontologies
+    bp_ont = BPAccess.bp_ontologies(Global.config.bp_base_rest_url)
     test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
     acronyms = test_indicies.map { |ind| bp_ont.keys[ind] }
     ont_to_test = bp_ont.select { |acr, _| acronyms.include?(acr) }
   else
-    ont_to_test = BPAccess.bp_ontologies(@options[:ontologies])
+    ont_to_test = BPAccess.bp_ontologies(Global.config.bp_base_rest_url, @options[:ontologies])
   end
   ont_to_test
 end
