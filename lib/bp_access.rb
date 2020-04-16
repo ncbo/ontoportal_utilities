@@ -13,7 +13,11 @@ module BPAccess
     response = MultiJson.load(response_raw)
     response.each { |ont| bp_ontologies[ont['acronym']] = ont if acronyms.empty? || acronyms.include?(ont['acronym']) }
     not_found = acronyms - bp_ontologies.keys
-    not_found.each { |acr| bp_ontologies[acr] = { 'error' => "Ontology #{acr} not found on #{base_rest_url}" } }
+
+    not_found.each do |acr|
+      latest = bp_latest_submission(base_rest_url, acr)
+      bp_ontologies[acr] = { 'error' => latest[:error] || "Ontology #{acr} not found on #{base_rest_url}" }
+    end
     bp_ontologies
   end
 
