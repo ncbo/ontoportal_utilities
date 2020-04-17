@@ -154,7 +154,9 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
 end
 
 def banner(ontology_acronym, title)
-  sprintf "%-20s  %-45s  %-20s", ('#' * 20).blue, "#{ontology_acronym}: #{title}".yellow, ('#' * 20).blue << "\n\n"
+  full_title = "#{ontology_acronym}: #{title}"
+  len = full_title.length
+  sprintf "%-20s  %-#{len}s  %-#{80 - len}s", ('#' * 20).blue, full_title.yellow, ('#' * (80 - len)).blue << "\n\n"
 end
 
 def rec_separator
