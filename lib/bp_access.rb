@@ -31,6 +31,7 @@ module BPAccess
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
       raise RestClient::NotFound if response.empty?
+
       bp_latest[:submission_id] = response['submissionId'].to_i
       bp_latest[:submission] = response
     rescue RestClient::NotFound
@@ -45,7 +46,7 @@ module BPAccess
   end
 
   def self.bp_ontology_roots(base_rest_url, ontology_acronym)
-    bp_roots = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, roots: {}, error: '' }
+    bp_roots = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, classes: {}, error: '' }
     params = { no_links: true, no_context: true, display: 'prefLabel,synonym,definition,properties,submission' }
     endpoint_url = base_rest_url + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym }
 
@@ -53,8 +54,13 @@ module BPAccess
       response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
-      bp_roots[:submission_id] = id_or_acronym_from_uri(response[0]['submission']).to_i
-      response.each { |cls| bp_roots[:roots][cls['@id']] = cls }
+
+      if response.empty?
+        bp_roots[:error] = "No root classes found for ontology #{ontology_acronym} on server #{base_rest_url}"
+      else
+        bp_roots[:submission_id] = id_or_acronym_from_uri(response[0]['submission']).to_i unless response.empty?
+        response.each { |cls| bp_roots[:classes][cls['@id']] = cls }
+      end
     rescue RestClient::NotFound
       bp_roots[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}"
     rescue RestClient::Forbidden
@@ -80,11 +86,15 @@ module BPAccess
         bp_classes[:submission_id] = id_or_acronym_from_uri(response['collection'][0]['submission']).to_i
         bp_classes[:total_count] = response['totalCount'].to_i
         response['collection'].each { |cls| bp_classes[:classes][cls['@id']] = cls }
+      else
+        bp_classes[:error] = "No classes found for ontology #{ontology_acronym} on server #{base_rest_url}"
       end
     rescue RestClient::NotFound
       bp_classes[:error] = "No submissions found for ontology #{ontology_acronym} on server #{base_rest_url}"
     rescue RestClient::Forbidden
       bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}"
+    rescue RestClient::InternalServerError
+      bp_classes[:error] = "The classes endpoint on #{base_rest_url} returned an Internal Server Error response for ontology #{ontology_acronym}. Endpoint URL: #{endpoint_url}"
     rescue RestClient::Exceptions::ReadTimeout => e
       e.message = "#{e.message}: #{endpoint_url}"
       raise e

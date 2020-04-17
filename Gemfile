@@ -5,6 +5,7 @@ gem 'pry'
 gem 'rest-client'
 gem 'global'
 gem 'octokit'
+gem 'colorize'
 
 
 

@@ -2,6 +2,7 @@ require 'multi_json'
 require 'pry'
 require 'rest-client'
 require 'optparse'
+require 'colorize'
 require_relative 'lib/config'
 require_relative 'lib/bp_access'
 
@@ -17,10 +18,9 @@ def main
   @logger = Logger.new(@options[:log_file])
   puts "Logging output to #{@options[:log_file]}\n\n"
   ont_to_test = ontologies_to_test
-  puts_and_log("Testing ontologies #{ont_to_test.keys}")
+  puts_and_log("Testing ontologies #{ont_to_test.keys.to_s.yellow}")
   puts_and_log("Proceeding with ALL checks even if Submission IDs are mismatched") if @options[:ignore_ids]
   puts_and_log("\n")
-  rec_separator = '─' * 120 << "\n\n"
 
   ont_to_test.each do |ontology_acronym, ont|
     if ont['error']
@@ -30,29 +30,52 @@ def main
     end
     metadata_artifacts = ontology_metadata_artifacts(ontology_acronym)
 
-    if metadata_artifacts[:error].empty?
+    if metadata_artifacts[:errors].empty?
       puts_and_log("\n")
     else
-      puts_and_log("#{metadata_artifacts[:error]}\n\n")
+      puts_and_log("#{metadata_artifacts[:errors].values.join("\n").red}\n\n")
       puts_and_log(rec_separator)
       next
     end
     latest_sub_endpoint_url = lambda { |server| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
+    puts_and_log(banner(ontology_acronym, 'Comparing Submission IDs'))
     err_condition = compare_artifacts('Submission IDs', ontology_acronym, metadata_artifacts[:submission_ids], latest_sub_endpoint_url)
 
     if !err_condition || @options[:ignore_ids]
+      puts_and_log(banner(ontology_acronym, 'Comparing Ontology Metadata'))
       compare_artifacts('Metadata', ontology_acronym, metadata_artifacts[:metadata], latest_sub_endpoint_url)
-      class_artifacts = ontology_class_artifacts(ontology_acronym)
 
-      unless class_artifacts[:error].empty?
-        puts_and_log("#{class_artifacts[:error]}\n\n")
+      # Root Class IDs
+      puts_and_log(banner(ontology_acronym, 'Comparing Root Class IDs'))
+      root_artifacts = ontology_class_artifacts(ontology_acronym, true)
+
+      unless root_artifacts[:errors].empty?
+        puts_and_log("#{root_artifacts[:errors].values.join("\n").red}\n\n")
         puts_and_log(rec_separator)
         next
       end
+      roots_endpoint_url = lambda { |server| server + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym } }
       classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
+      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
+      compare_artifacts('Root Class IDs', ontology_acronym, root_artifacts[:ids], roots_endpoint_url)
+
+      # Root Class Artifacts
+      puts_and_log(banner(ontology_acronym, 'Comparing Root Class Artifacts'))
+      compare_artifacts('Root Class Preferred Labels', ontology_acronym, root_artifacts[:pref_labels], roots_endpoint_url)
+      compare_artifacts('Root Class Synonyms', ontology_acronym, root_artifacts[:synonyms], roots_endpoint_url)
+      compare_artifacts('Root Class Definitions', ontology_acronym, root_artifacts[:definitions], roots_endpoint_url)
+
+      # Class Artifacts
+      puts_and_log(banner(ontology_acronym, 'Comparing Sample Class Artifacts'))
+      class_artifacts = ontology_class_artifacts(ontology_acronym, false)
+
+      unless class_artifacts[:errors].empty?
+        puts_and_log("#{class_artifacts[:errors].values.join("\n").red}\n\n")
+        puts_and_log(rec_separator)
+        next
+      end
       compare_artifacts('Total Class Counts', ontology_acronym, class_artifacts[:total_counts], classes_endpoint_url)
       compare_artifacts('Preferred Labels', ontology_acronym, class_artifacts[:pref_labels], classes_endpoint_url)
-      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
       compare_artifacts('Synonyms', ontology_acronym, class_artifacts[:synonyms], class_endpoint_url)
       compare_artifacts('Definitions', ontology_acronym, class_artifacts[:definitions], class_endpoint_url)
     end
@@ -73,8 +96,20 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
       if set1 != set2
         matched = false
         err_condition = true
-        puts_and_log "#{artifact_name} for #{ontology_acronym} DO NOT match on servers #{duo[0]} and #{duo[1]}:"
-        puts_and_log(JSON.pretty_generate(artifact_hash) << "\n\n")
+        puts_and_log "#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:"
+        puts_and_log(JSON.pretty_generate(artifact_hash).red << "\n\n")
+      end
+    elsif set1.is_a?(Array)
+      if set1 != set2
+        matched = false
+        diff1 = set1 - set2
+        diff2 = set2 - set1
+        diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
+        puts_and_log("#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
+        puts_and_log(endpoint_url.call(duo[0]))
+        puts_and_log(endpoint_url.call(duo[1]))
+        puts_and_log('Differences:'.red)
+        puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
       end
     elsif set1.is_a?(Hash) && !set1.empty?
       if set1.values[0].is_a?(String)
@@ -85,11 +120,11 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
           diff2_arr = set2.to_a - set1.to_a
           diff2 = Hash[*diff2_arr.flatten].map { |k, v| [k, v.gsub('"', "'")] }.to_h
           diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
-          puts_and_log("#{artifact_name} for #{ontology_acronym} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
+          puts_and_log("#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
           puts_and_log(endpoint_url.call(duo[0]))
           puts_and_log(endpoint_url.call(duo[1]))
-          puts_and_log('Differences:')
-          puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
+          puts_and_log('Differences:'.red)
+          puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
         end
       elsif set1.values[0].is_a?(Array)
         set1.each do |id1, coll1|
@@ -98,15 +133,15 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
 
             unless diffs.empty?
               matched = false
-              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} DO NOT match on servers #{duo[0]} and #{duo[1]}:")
+              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
               puts_and_log(endpoint_url.call(duo[0], id1))
               puts_and_log(endpoint_url.call(duo[1], id1))
-              puts_and_log('Differences:')
-              puts_and_log(JSON.pretty_generate(diffs) << "\n\n")
+              puts_and_log('Differences:'.red)
+              puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
             end
           else
             matched = false
-            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but NONE on server #{duo[1]}:")
+            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but #{'NONE'.red} on server #{duo[1]}:")
             puts_and_log(endpoint_url.call(duo[0], id1))
             puts_and_log(endpoint_url.call(duo[1], id1) << "\n\n")
           end
@@ -118,8 +153,20 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
   err_condition
 end
 
+def banner(ontology_acronym, title)
+  sprintf "%-20s  %-45s  %-20s", ('#' * 20).blue, "#{ontology_acronym}: #{title}".yellow, ('#' * 20).blue << "\n\n"
+end
+
+def rec_separator
+  ('─' * 120).blue << "\n\n"
+end
+
 def server_permutations
   Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
+end
+
+def random_numbers(how_many, min = 0, max = 20)
+  (min..max).to_a.sort { rand - 0.5 }[0..how_many - 1]
 end
 
 def ontologies_to_test
@@ -141,13 +188,17 @@ end
 def ontology_metadata_artifacts(ontology_acronym)
   submission_ids = {}
   metadata = {}
+  errors = {}
   server_variations = Global.config.servers_to_compare.dup
   server_variations.dup.each { |server| server_variations << (server.start_with?('http://') ? server.sub('http://', 'https://') : server.sub('https://', 'http://')) }
 
   Global.config.servers_to_compare.each do |server|
     bp_latest = BPAccess.bp_latest_submission(server, ontology_acronym)
-    return { error: bp_latest[:error] } unless bp_latest[:error].empty?
 
+    unless bp_latest[:error].empty?
+      errors[server] = bp_latest[:error]
+      next
+    end
     puts_and_log("Retrieved latest submission for ontology #{ontology_acronym} from #{server}")
     submission_ids[server] = bp_latest[:submission_id]
 
@@ -156,46 +207,61 @@ def ontology_metadata_artifacts(ontology_acronym)
     # remove any references to the servers from values for comparing
     metadata[server].each { |_, v| server_variations.each { |var| v.gsub!(var, '') } }
   end
-  { submission_ids: submission_ids, metadata: metadata, error: '' }
+  { submission_ids: submission_ids, metadata: metadata, errors: errors }
 end
 
-def ontology_class_artifacts(ontology_acronym)
+def ontology_class_artifacts(ontology_acronym, roots = false)
   submission_ids = {}
   total_counts = {}
+  ids = {}
   pref_labels = {}
   synonyms = {}
   definitions = {}
   master_classes = nil
   missing_ids = []
+  errors = {}
 
   Global.config.servers_to_compare.each_with_index do |server, row_index|
-    bp_classes = BPAccess.bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
-    return { error: bp_classes[:error] } unless bp_classes[:error].empty?
+    bp_classes = nil
 
-    puts_and_log("Retrieved #{bp_classes[:classes].keys.count} classes for ontology #{ontology_acronym} from #{server}")
-
-    if row_index.zero?
-      master_classes = bp_classes.dup
+    if roots
+      bp_classes = BPAccess.bp_ontology_roots(server, ontology_acronym)
     else
-      m_keys = master_classes[:classes].keys
-      bp_keys = bp_classes[:classes].keys
-      missing_ids = m_keys - bp_keys
-      non_matching_ids = bp_keys - m_keys
-      bp_classes[:classes].reject! { |id, _| non_matching_ids.include?(id) }
+      bp_classes = BPAccess.bp_ontology_classes(server, ontology_acronym, @options[:num_classes])
     end
-    total_counts[server] = bp_classes[:total_count]
+
+    unless bp_classes[:error].empty?
+      errors[server] = bp_classes[:error]
+      next
+    end
+    puts_and_log("Retrieved #{bp_classes[:classes].keys.count}#{roots ? ' root' : ''} classes for ontology #{ontology_acronym} from #{server}")
+
+    unless roots
+      if row_index.zero?
+        master_classes = bp_classes.dup
+      else
+        m_keys = master_classes[:classes].keys
+        bp_keys = bp_classes[:classes].keys
+        missing_ids = m_keys - bp_keys
+        non_matching_ids = bp_keys - m_keys
+        bp_classes[:classes].reject! { |id, _| non_matching_ids.include?(id) }
+      end
+    end
+    total_counts[server] = bp_classes[:total_count] if bp_classes[:total_count]
     submission_ids[server] = bp_classes[:submission_id]
+    ids[server] = []
     pref_labels[server] = {}
     synonyms[server] = {}
     definitions[server] = {}
 
     bp_classes[:classes].each do |id, cls|
+      ids[server] << id
       pref_labels[server][id] = cls['prefLabel']
       synonyms[server][id] = cls['synonym'].map(&:to_s).sort
       definitions[server][id] = cls['definition'].map(&:to_s).sort
     end
   end
-  puts_and_log("Processing. Please wait...\n\n")
+  puts_and_log("Processing. Please wait...\n\n") if errors.empty?
 
   Global.config.servers_to_compare[1..-1].each do |server|
     missing_ids.each do |id|
@@ -203,16 +269,13 @@ def ontology_class_artifacts(ontology_acronym)
       puts_and_log("#{bp_class[:error]}\n") unless bp_class[:error].empty?
       next if bp_class[:class].empty?
 
+      ids[server] << id
       pref_labels[server][id] = bp_class[:class]['prefLabel']
       synonyms[server][id] = bp_class[:class]['synonym'].map(&:to_s).sort
       definitions[server][id] = bp_class[:class]['definition'].map(&:to_s).sort
     end
   end
-  { total_counts: total_counts, submission_ids: submission_ids, pref_labels: pref_labels, synonyms: synonyms, definitions: definitions, error: '' }
-end
-
-def random_numbers(how_many, min = 0, max = 20)
-  (min..max).to_a.sort { rand - 0.5 }[0..how_many - 1]
+  { ids: ids, total_counts: total_counts, submission_ids: submission_ids, pref_labels: pref_labels, synonyms: synonyms, definitions: definitions, errors: errors }
 end
 
 def parse_options
