@@ -16,7 +16,7 @@ module BPAccess
 
     not_found.each do |acr|
       latest = bp_latest_submission(base_rest_url, acr)
-      bp_ontologies[acr] = { 'error' => latest[:error] || "Ontology #{acr} not found on #{base_rest_url}" }
+      bp_ontologies[acr] = { 'error' => latest[:error] || "Ontology #{acr} NOT FOUND on #{base_rest_url}" }
     end
     bp_ontologies
   end
@@ -114,7 +114,7 @@ module BPAccess
       bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
       bp_class[:class] = response
     rescue RestClient::NotFound
-      bp_class[:error] = "Class #{class_id} not found for ontology #{ontology_acronym} on server #{base_rest_url}\n#{endpoint_url}"
+      bp_class[:error] = "Class #{class_id} NOT FOUND for ontology #{ontology_acronym} on server #{base_rest_url}\n#{endpoint_url}"
     rescue RestClient::Forbidden
       bp_classes[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}"
     rescue RestClient::Exceptions::ReadTimeout => e
