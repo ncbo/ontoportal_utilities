@@ -62,8 +62,8 @@ def main
       # Root Class Artifacts
       puts_and_log(banner(ontology_acronym, 'Comparing Root Class Artifacts'))
       compare_artifacts('Root Class Preferred Labels', ontology_acronym, root_artifacts[:pref_labels], roots_endpoint_url)
-      compare_artifacts('Root Class Synonyms', ontology_acronym, root_artifacts[:synonyms], roots_endpoint_url)
-      compare_artifacts('Root Class Definitions', ontology_acronym, root_artifacts[:definitions], roots_endpoint_url)
+      compare_artifacts('Root Class Synonyms', ontology_acronym, root_artifacts[:synonyms], class_endpoint_url)
+      compare_artifacts('Root Class Definitions', ontology_acronym, root_artifacts[:definitions], class_endpoint_url)
 
       # Class Artifacts
       puts_and_log(banner(ontology_acronym, 'Comparing Sample Class Artifacts'))
@@ -268,9 +268,16 @@ def ontology_class_artifacts(ontology_acronym, roots = false)
   Global.config.servers_to_compare[1..-1].each do |server|
     missing_ids.each do |id|
       bp_class = BPAccess.bp_ontology_class(server, ontology_acronym, id)
-      puts_and_log("#{bp_class[:error]}\n") unless bp_class[:error].empty?
-      next if bp_class[:class].empty?
 
+      unless bp_class[:error].empty?
+        # output error message and don't compare artifacts for a class
+        # that resulted in an error on at least one of the servers
+        puts_and_log("#{bp_class[:error]}\n\n")
+        pref_labels.each { |_, lbl_hash| lbl_hash.reject! { |i, __| i == id } }
+        synonyms.each { |_, syn_hash| syn_hash.reject! { |i, __| i == id } }
+        definitions.each { |_, def_hash| def_hash.reject! { |i, __| i == id } }
+        next
+      end
       ids[server] << id
       pref_labels[server][id] = bp_class[:class]['prefLabel']
       synonyms[server][id] = bp_class[:class]['synonym'].map(&:to_s).sort
