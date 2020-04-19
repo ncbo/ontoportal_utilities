@@ -37,7 +37,7 @@ def main
       puts_and_log(rec_separator)
       next
     end
-    latest_sub_endpoint_url = lambda { |server| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
+    latest_sub_endpoint_url = lambda { |server, _| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
     puts_and_log(banner(ontology_acronym, 'Comparing Submission IDs'))
     err_condition = compare_artifacts('Submission IDs', ontology_acronym, metadata_artifacts[:submission_ids], latest_sub_endpoint_url)
 
@@ -54,9 +54,9 @@ def main
         puts_and_log(rec_separator)
         next
       end
-      roots_endpoint_url = lambda { |server| server + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym } }
-      classes_endpoint_url = lambda { |server| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
-      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server) + '/' + CGI.escape(class_id) }
+      roots_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym } }
+      classes_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
+      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server, '') + '/' + CGI.escape(class_id) }
       compare_artifacts('Root Class IDs', ontology_acronym, root_artifacts[:ids], roots_endpoint_url)
 
       # Root Class Artifacts
@@ -96,35 +96,22 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
       if set1 != set2
         matched = false
         err_condition = true
-        puts_and_log "#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:"
-        puts_and_log(JSON.pretty_generate(artifact_hash).red << "\n\n")
+        print_diffs(artifact_name, ontology_acronym, duo, nil, artifact_hash, nil)
       end
     elsif set1.is_a?(Array)
       if set1 != set2
         matched = false
-        diff1 = set1 - set2
-        diff2 = set2 - set1
-        diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
-        puts_and_log("#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
-        puts_and_log(endpoint_url.call(duo[0]))
-        puts_and_log(endpoint_url.call(duo[1]))
-        puts_and_log('Differences:'.red)
-        puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
+        diffs_arr = compare_arrays(set1, set2)
+        diffs = { "#{duo[0]}": diffs_arr[0], "#{duo[1]}": diffs_arr[1] }
+        print_diffs(artifact_name, ontology_acronym, duo, endpoint_url, diffs, nil)
       end
     elsif set1.is_a?(Hash) && !set1.empty?
-      if set1.values[0].is_a?(String)
+      if set1.values[0].is_a?(String) || set1.values[0].is_a?(Integer)
         if set1 != set2
           matched = false
-          diff1_arr = set1.to_a - set2.to_a
-          diff1 = Hash[*diff1_arr.flatten].map { |k, v| [k, v.gsub('"', "'")] }.to_h
-          diff2_arr = set2.to_a - set1.to_a
-          diff2 = Hash[*diff2_arr.flatten].map { |k, v| [k, v.gsub('"', "'")] }.to_h
-          diffs = { "#{duo[0]}": diff1, "#{duo[1]}": diff2 }
-          puts_and_log("#{artifact_name} for #{ontology_acronym} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
-          puts_and_log(endpoint_url.call(duo[0]))
-          puts_and_log(endpoint_url.call(duo[1]))
-          puts_and_log('Differences:'.red)
-          puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
+          diffs_arr = compare_string_hashes(set1, set2)
+          diffs = { "#{duo[0]}": diffs_arr[0], "#{duo[1]}": diffs_arr[1] }
+          print_diffs(artifact_name, ontology_acronym, duo, endpoint_url, diffs, nil)
         end
       elsif set1.values[0].is_a?(Array)
         set1.each do |id1, coll1|
@@ -133,17 +120,11 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
 
             unless diffs.empty?
               matched = false
-              puts_and_log("#{artifact_name} for #{ontology_acronym}, term #{id1} #{'DO NOT match'.red} on servers #{duo[0]} and #{duo[1]}:")
-              puts_and_log(endpoint_url.call(duo[0], id1))
-              puts_and_log(endpoint_url.call(duo[1], id1))
-              puts_and_log('Differences:'.red)
-              puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
+              print_diffs(artifact_name, ontology_acronym, duo, endpoint_url, diffs, id1)
             end
           else
             matched = false
-            puts_and_log("#{artifact_name} found for #{ontology_acronym}, term #{id1} on server #{duo[0]}, but #{'NONE'.red} on server #{duo[1]}:")
-            puts_and_log(endpoint_url.call(duo[0], id1))
-            puts_and_log(endpoint_url.call(duo[1], id1) << "\n\n")
+            print_diffs(artifact_name, ontology_acronym, duo, endpoint_url, nil, id1)
           end
         end
       end
@@ -151,6 +132,37 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
     puts_and_log "#{artifact_name} for #{ontology_acronym} match on servers #{duo[0]} and #{duo[1]}\n\n" if matched
   end
   err_condition
+end
+
+def print_diffs(artifact_name, ontology_acronym, server_duo, endpoint_url = nil, diffs = nil, id = nil)
+  str = "#{artifact_name} for #{ontology_acronym}"
+  str << ", term #{id}" if id
+  str << " #{'DO NOT match'.red} on servers #{server_duo[0]} and #{server_duo[1]}:"
+  puts_and_log(str)
+
+  if endpoint_url
+    puts_and_log(endpoint_url.call(server_duo[0], id))
+    puts_and_log(endpoint_url.call(server_duo[1], id))
+  end
+
+  if diffs
+    puts_and_log('Differences:'.red)
+    puts_and_log(JSON.pretty_generate(diffs).red << "\n\n")
+  end
+end
+
+def compare_arrays(a1, a2)
+  diff1 = a1 - a2
+  diff2 = a2 - a1
+  [diff1, diff2]
+end
+
+def compare_string_hashes(h1, h2)
+  diff1_arr = h1.to_a - h2.to_a
+  diff1 = Hash[*diff1_arr.flatten].map { |k, v| [k, v.to_s.gsub('"', "'")] }.to_h
+  diff2_arr = h2.to_a - h1.to_a
+  diff2 = Hash[*diff2_arr.flatten].map { |k, v| [k, v.to_s.gsub('"', "'")] }.to_h
+  [diff1, diff2]
 end
 
 def banner(ontology_acronym, title)

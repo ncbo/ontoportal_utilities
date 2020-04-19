@@ -134,7 +134,8 @@ module BPAccess
     rescue RestClient::InternalServerError => e
       e.message = "#{e.message}: #{endpoint_url}"
       obj[:error] = e.message
-    rescue RestClient::Exceptions::ReadTimeout => e
+    rescue RestClient::Exceptions::ReadTimeout,
+           RestClient::Exceptions::OpenTimeout => e
       e.message = "#{e.message}: #{endpoint_url}"
       raise e
     end
