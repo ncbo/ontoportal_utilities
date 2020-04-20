@@ -38,32 +38,44 @@ def main
       next
     end
     latest_sub_endpoint_url = lambda { |server, _| server + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym } }
+    classes_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
+    class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server, '') + '/' + CGI.escape(class_id) }
     puts_and_log(banner(ontology_acronym, 'Comparing Submission IDs'))
     err_condition = compare_artifacts('Submission IDs', ontology_acronym, metadata_artifacts[:submission_ids], latest_sub_endpoint_url)
 
     if !err_condition || @options[:ignore_ids]
+      # Metadata
       puts_and_log(banner(ontology_acronym, 'Comparing Ontology Metadata'))
       compare_artifacts('Metadata', ontology_acronym, metadata_artifacts[:metadata], latest_sub_endpoint_url)
+
+      # Metrics
+      metrics_endpoint_url = lambda { |server, _| server + Global.config.bp_ontology_metrics_endpoint  % { ontology_acronym: ontology_acronym } }
+      puts_and_log(banner(ontology_acronym, 'Comparing Ontology Metrics'))
+      metrics_artifacts = ontology_metrics_artifacts(ontology_acronym)
+
+      if metrics_artifacts[:errors].empty?
+        puts_and_log("\n")
+        compare_artifacts('Metrics', ontology_acronym, metrics_artifacts[:metrics], metrics_endpoint_url)
+      else
+        puts_and_log("#{metrics_artifacts[:errors].values.join("\n").red}\n\n")
+      end
 
       # Root Class IDs
       puts_and_log(banner(ontology_acronym, 'Comparing Root Class IDs'))
       root_artifacts = ontology_class_artifacts(ontology_acronym, true)
 
-      unless root_artifacts[:errors].empty?
-        puts_and_log("#{root_artifacts[:errors].values.join("\n").red}\n\n")
-        puts_and_log(rec_separator)
-        next
-      end
-      roots_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym } }
-      classes_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } }
-      class_endpoint_url = lambda { |server, class_id| classes_endpoint_url.call(server, '') + '/' + CGI.escape(class_id) }
-      compare_artifacts('Root Class IDs', ontology_acronym, root_artifacts[:ids], roots_endpoint_url)
+      if root_artifacts[:errors].empty?
+        roots_endpoint_url = lambda { |server, _| server + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym } }
+        compare_artifacts('Root Class IDs', ontology_acronym, root_artifacts[:ids], roots_endpoint_url)
 
-      # Root Class Artifacts
-      puts_and_log(banner(ontology_acronym, 'Comparing Root Class Artifacts'))
-      compare_artifacts('Root Class Preferred Labels', ontology_acronym, root_artifacts[:pref_labels], roots_endpoint_url)
-      compare_artifacts('Root Class Synonyms', ontology_acronym, root_artifacts[:synonyms], class_endpoint_url)
-      compare_artifacts('Root Class Definitions', ontology_acronym, root_artifacts[:definitions], class_endpoint_url)
+        # Root Class Artifacts
+        puts_and_log(banner(ontology_acronym, 'Comparing Root Class Artifacts'))
+        compare_artifacts('Root Class Preferred Labels', ontology_acronym, root_artifacts[:pref_labels], roots_endpoint_url)
+        compare_artifacts('Root Class Synonyms', ontology_acronym, root_artifacts[:synonyms], class_endpoint_url)
+        compare_artifacts('Root Class Definitions', ontology_acronym, root_artifacts[:definitions], class_endpoint_url)
+      else
+        puts_and_log("#{root_artifacts[:errors].values.join("\n").red}\n\n")
+      end
 
       # Class Artifacts
       puts_and_log(banner(ontology_acronym, 'Comparing Sample Class Artifacts'))
@@ -197,6 +209,25 @@ def ontologies_to_test
     ont_to_test = BPAccess.bp_ontologies(Global.config.bp_base_rest_url, @options[:ontologies])
   end
   ont_to_test
+end
+
+def ontology_metrics_artifacts(ontology_acronym)
+  metrics = {}
+  errors = {}
+
+  Global.config.servers_to_compare.each do |server|
+    bp_metrics = BPAccess.bp_ontology_metrics(server, ontology_acronym)
+
+    unless bp_metrics[:error].empty?
+      errors[server] = bp_metrics[:error]
+      next
+    end
+    puts_and_log("Retrieved metrics for ontology #{ontology_acronym} from #{server}")
+
+    # compare only the integer values
+    metrics[server] = bp_metrics[:metrics].select { |_, v| v.is_a?(Integer) }
+  end
+  { metrics: metrics, errors: errors }
 end
 
 def ontology_metadata_artifacts(ontology_acronym)

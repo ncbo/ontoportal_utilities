@@ -50,8 +50,13 @@ module BPAccess
       response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
-      bp_metrics[:submission_id] = id_or_acronym_from_uri(response['submission'][0]).to_i unless response['submission'].empty?
-      bp_metrics[:metrics] = response
+
+      if response.empty?
+        bp_metrics[:error] = "No metrics found for ontology #{ontology_acronym} on server #{base_rest_url}"
+      else
+        bp_metrics[:submission_id] = id_or_acronym_from_uri(response['submission'][0]).to_i if response['submission'] && !response['submission'].empty?
+        bp_metrics[:metrics] = response
+      end
     end
     bp_metrics
   end
@@ -69,7 +74,7 @@ module BPAccess
       if response.empty?
         bp_roots[:error] = "No root classes found for ontology #{ontology_acronym} on server #{base_rest_url}"
       else
-        bp_roots[:submission_id] = id_or_acronym_from_uri(response[0]['submission']).to_i unless response.empty?
+        bp_roots[:submission_id] = id_or_acronym_from_uri(response[0]['submission']).to_i
         response.each { |cls| bp_roots[:classes][cls['@id']] = cls }
       end
     end
