@@ -10,7 +10,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_ontologies_endpoint
 
     handle_bp_request(bp_ontologies, '', endpoint_url, '') do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
       response.each { |ont| bp_ontologies[ont['acronym']] = ont if acronyms.empty? || acronyms.include?(ont['acronym']) }
@@ -30,7 +30,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_latest_submission_endpoint  % { ontology_acronym: ontology_acronym }
 
     handle_bp_request(bp_latest, ontology_acronym, endpoint_url, 'Submissions NOT FOUND') do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
       raise RestClient::NotFound if response.empty?
@@ -47,7 +47,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_ontology_metrics_endpoint  % { ontology_acronym: ontology_acronym }
 
     handle_bp_request(bp_metrics, ontology_acronym, endpoint_url, 'Ontology (or Submission) NOT FOUND') do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
 
@@ -67,7 +67,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_classes_roots_endpoint  % { ontology_acronym: ontology_acronym }
 
     handle_bp_request(bp_roots, ontology_acronym, endpoint_url, 'Submissions NOT FOUND') do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
 
@@ -87,7 +87,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym }
 
     handle_bp_request(bp_classes, ontology_acronym, endpoint_url, 'Submissions NOT FOUND') do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
 
@@ -108,7 +108,7 @@ module BPAccess
     endpoint_url = base_rest_url + Global.config.bp_classes_endpoint  % { ontology_acronym: ontology_acronym } + '/' + CGI.escape(class_id)
 
     handle_bp_request(bp_class, ontology_acronym, endpoint_url, "Class #{class_id} NOT FOUND") do
-      response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
       raise_std_error_message(response_raw, endpoint_url)
       response = MultiJson.load(response_raw)
       bp_class[:submission_id] = id_or_acronym_from_uri(response['submission']).to_i
@@ -120,7 +120,7 @@ module BPAccess
   def self.find_class_in_bioportal(base_rest_url, class_id)
     params = { q: class_id, require_exact_match: true, no_context: true }
     endpoint_url = base_rest_url + Global.config.bp_search_endpoint
-    response_raw = RestClient.get(endpoint_url, bp_api_headers(params))
+    response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
     raise_std_error_message(response_raw, endpoint_url)
     response = MultiJson.load(response_raw)
     response['totalCount'].to_i > 0 ? response['collection'][0] : false
@@ -129,13 +129,15 @@ module BPAccess
   def self.handle_bp_request(obj, ontology_acronym, endpoint_url, def_not_found_msg)
     uri = URI.parse(endpoint_url)
     base_rest_url = "#{uri.scheme}://#{uri.host}"
+    api_key = Global.config.servers_to_compare[base_rest_url]
 
     begin
       yield
     rescue RestClient::NotFound => e
       handle_not_found(obj, ontology_acronym, base_rest_url, e, def_not_found_msg)
     rescue RestClient::Forbidden
-      obj[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{Global.config.bp_api_key}"
+    rescue RestClient::Unauthorized
+      obj[:error] = "Access denied to ontology #{ontology_acronym} on server #{base_rest_url} using API Key #{api_key}"
     rescue RestClient::InternalServerError => e
       e.message = "#{e.message}: #{endpoint_url}"
       obj[:error] = e.message
@@ -157,8 +159,9 @@ module BPAccess
     obj[:error] = "#{resp["errors"].join(", ").reverse.sub('.', '').reverse} (#{ontology_acronym} on server #{base_rest_url})."
   end
 
-  def self.bp_api_headers(params)
-    { Authorization: "apikey token=#{Global.config.bp_api_key}", params: params }
+  def self.bp_api_headers(base_rest_url, params)
+    api_key = Global.config.servers_to_compare[base_rest_url]
+    { Authorization: "apikey token=#{api_key}", params: params }
   end
 
   def self.raise_std_error_message(response, endpoint)

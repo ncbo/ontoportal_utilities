@@ -1,7 +1,5 @@
 default:
-  bp_api_key: "your-bioportal-api-key"
   default_log_file_path: "logs/%{script_name}-run.log"
-  bp_base_rest_url: "https://data.bioontology.org"
   bp_search_endpoint: "/search"
   bp_ontologies_endpoint: "/ontologies"
   bp_submissions_endpoint: "/submissions"
@@ -9,4 +7,10 @@ default:
   bp_ontology_metrics_endpoint: "/ontologies/%{ontology_acronym}/metrics"
   bp_classes_endpoint: "/ontologies/%{ontology_acronym}/classes"
   bp_classes_roots_endpoint: "/ontologies/%{ontology_acronym}/classes/roots"
-  servers_to_compare: ["https://data.bioontology.org", "https://stagedata.bioontology.org"]
+
+  # Hash in a format { server_base_url1: api_key_for_server1, server_base_url2: api_key_for_server2 }
+  # The first server is always treated as the master for the ontology list
+  servers_to_compare:
+    https://master-server: '<api key for master-server>'
+    https://slave-server1: '<api key for slave-server1>'
+    https://slave-server2: '<api key for slave-server2>'

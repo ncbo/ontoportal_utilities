@@ -188,7 +188,7 @@ def rec_separator
 end
 
 def server_permutations
-  Global.config.servers_to_compare.permutation(2).to_a.each { |a| a.sort! }.uniq
+  Global.config.servers_to_compare.hash.keys.permutation(2).to_a.each { |a| a.sort! }.uniq
 end
 
 def random_numbers(how_many, min = 0, max = 20)
@@ -197,16 +197,17 @@ end
 
 def ontologies_to_test
   num_ont = number_or_nil(@options[:ontologies].join(','))
+  base_rest_url = Global.config.servers_to_compare.hash.keys[0]
   ont_to_test = nil
 
   if num_ont || @options[:ontologies].empty?
     num_ont ||= DEF_TEST_NUM_ONTOLOGIES
-    bp_ont = BPAccess.bp_ontologies(Global.config.bp_base_rest_url)
+    bp_ont = BPAccess.bp_ontologies(base_rest_url)
     test_indicies = random_numbers(num_ont, 0, bp_ont.length - 1)
     acronyms = test_indicies.map { |ind| bp_ont.keys[ind] }
     ont_to_test = bp_ont.select { |acr, _| acronyms.include?(acr) }
   else
-    ont_to_test = BPAccess.bp_ontologies(Global.config.bp_base_rest_url, @options[:ontologies])
+    ont_to_test = BPAccess.bp_ontologies(base_rest_url, @options[:ontologies])
   end
   ont_to_test
 end
@@ -215,7 +216,7 @@ def ontology_metrics_artifacts(ontology_acronym)
   metrics = {}
   errors = {}
 
-  Global.config.servers_to_compare.each do |server|
+  Global.config.servers_to_compare.hash.each do |server, _|
     bp_metrics = BPAccess.bp_ontology_metrics(server, ontology_acronym)
 
     unless bp_metrics[:error].empty?
@@ -234,10 +235,10 @@ def ontology_metadata_artifacts(ontology_acronym)
   submission_ids = {}
   metadata = {}
   errors = {}
-  server_variations = Global.config.servers_to_compare.dup
+  server_variations = Global.config.servers_to_compare.hash.keys.dup
   server_variations.dup.each { |server| server_variations << (server.start_with?('http://') ? server.sub('http://', 'https://') : server.sub('https://', 'http://')) }
 
-  Global.config.servers_to_compare.each do |server|
+  Global.config.servers_to_compare.hash.each do |server, _|
     bp_latest = BPAccess.bp_latest_submission(server, ontology_acronym)
 
     unless bp_latest[:error].empty?
@@ -250,7 +251,7 @@ def ontology_metadata_artifacts(ontology_acronym)
     # convert all values to string for uniform comparison
     metadata[server] = bp_latest[:submission].map { |k, v| [k, v.to_s] }.to_h
     # remove any references to the servers from values for comparing
-    metadata[server].each { |_, v| server_variations.each { |var| v.gsub!(var, '') } }
+    metadata[server].each { |_, v| server_variations.each { |server_name| v.gsub!(server_name, '') unless v.frozen? } }
   end
   { submission_ids: submission_ids, metadata: metadata, errors: errors }
 end
@@ -266,7 +267,7 @@ def ontology_class_artifacts(ontology_acronym, roots = false)
   missing_ids = []
   errors = {}
 
-  Global.config.servers_to_compare.each_with_index do |server, row_index|
+  Global.config.servers_to_compare.hash.keys.each_with_index do |server, row_index|
     bp_classes = nil
 
     if roots
@@ -308,7 +309,7 @@ def ontology_class_artifacts(ontology_acronym, roots = false)
   end
   puts_and_log("Processing. Please wait...\n\n") if errors.empty?
 
-  Global.config.servers_to_compare[1..-1].each do |server|
+  Global.config.servers_to_compare.hash.keys[1..-1].each do |server|
     missing_ids.each do |id|
       bp_class = BPAccess.bp_ontology_class(server, ontology_acronym, id)
 

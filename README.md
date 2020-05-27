@@ -5,14 +5,23 @@ A set of scripts for benchmarking and troubleshooting issues with OntoPortal
 1. Clone this repo and run `bundle install`
 2. Copy `config/config.yml.sample` to `config/config.yml`
 3. Edit `config/config.yml` and replace the following attributes with your own:
-    1. `bp_api_key: "your-bioportal-api-key"`<br/>
-&nbsp;BioPortal API key can be found here: https://bioportal.bioontology.org/account
-4. If needed, edit the config parameter `servers_to_compare`, adding any number of servers to the array. The performance checks will be run against every combination of two servers in the array.
-    1. `servers_to_compare: ["https://data.bioontology.org", "https://stagedata.bioontology.org"]`<br/>
-
+```
+   servers_to_compare:
+      https://master-server: '<api key for master-server>'
+      https://slave-server1: '<api key for slave-server1>'
+      https://slave-server2: '<api key for slave-server2>'
+      ...
+```
+Example:
+```
+  servers_to_compare:
+    https://data.bioontology.org: '3c555bd8-2f80-46d4-aa04-e013bf5fd00f'
+    https://data1.bioontology.org: '2b9806f2-9b21-43ca-bdf1-bbadf1358fbd'
+```
+BioPortal API key can be found here: https://bioportal.bioontology.org/account
 
 ## Server Data Comparator
-Retrieves a given number of ontologies from a set of API servers and compares their metadata and class artifacts.
+Retrieves a given number of ontologies from a set of API servers and compares their metadata and class artifacts. You can add any number of servers to compare against each other. The comparisons are done using every permutation of two servers from the list. The very first server on the list (master) is used to retrieve the list of ontologies to be used in the comparison tests.
 
 ### Execution:
 The script accepts the following parameters (all are OPTIONAL):
