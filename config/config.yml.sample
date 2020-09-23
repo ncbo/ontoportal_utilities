@@ -5,6 +5,7 @@ default:
   bp_submissions_endpoint: "/submissions"
   bp_latest_submission_endpoint: "/ontologies/%{ontology_acronym}/latest_submission"
   bp_ontology_metrics_endpoint: "/ontologies/%{ontology_acronym}/metrics"
+  bp_ontology_properties_endpoint: "/ontologies/%{ontology_acronym}/properties"
   bp_classes_endpoint: "/ontologies/%{ontology_acronym}/classes"
   bp_classes_roots_endpoint: "/ontologies/%{ontology_acronym}/classes/roots"
 

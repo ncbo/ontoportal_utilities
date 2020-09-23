@@ -81,6 +81,26 @@ module BPAccess
     bp_roots
   end
 
+  def self.bp_ontology_properties(base_rest_url, ontology_acronym)
+    bp_properties = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, props: {}, error: '' }
+    params = { no_links: true, no_context: true }
+    endpoint_url = base_rest_url + Global.config.bp_ontology_properties_endpoint  % { ontology_acronym: ontology_acronym }
+
+    handle_bp_request(bp_properties, ontology_acronym, endpoint_url, 'No properties found') do
+      response_raw = RestClient.get(endpoint_url, bp_api_headers(base_rest_url, params))
+      raise_std_error_message(response_raw, endpoint_url)
+      response = MultiJson.load(response_raw)
+
+      if response.empty?
+        bp_properties[:error] = "No properties found for ontology #{ontology_acronym} on server #{base_rest_url}"
+      else
+        bp_properties[:submission_id] = id_or_acronym_from_uri(response[0]['submission']).to_i
+        response.each { |prop| bp_properties[:props][prop['@id']] = prop }
+      end
+    end
+    bp_properties
+  end
+
   def self.bp_ontology_classes(base_rest_url, ontology_acronym, how_many)
     bp_classes = { server: base_rest_url, ont: ontology_acronym, submission_id: -1, total_count: 0, classes: {}, error: '' }
     params = { no_links: true, no_context: true, pagesize: how_many, display: 'prefLabel,synonym,definition,properties,submission' }
