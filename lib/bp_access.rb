@@ -1,3 +1,4 @@
+require 'rest-client'
 require_relative 'config'
 
 module BPAccess
