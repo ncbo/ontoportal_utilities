@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# 4store metadata backup script
+# runs 4s-dump to export metadata graphs and creates dated gzip archive
+# https://github.com/ncbo/documentation/blob/master/metadata_dumps.md
+#
+# This script is used in daily backups
+
+SCRIPTPATH='.'
+ENDPOINT='http://localhost:8080/sparql/'
+BACKUP_DIR=/srv/ontoportal/data/backup/4store/metadata
+
+if [[ ! -e "${BACKUP_DIR}" ]] ;then
+  echo "${BACKUP_DIR} directory is not present, aborting" >&2
+  exit 1
+fi
+
+datestamp=$(date --iso)
+
+tmp_dir="$(mktemp -dt 4sdump-XXXXXXX)"
+if (( $? != 0 )); then
+   echo "can't create tmp dir" >&2
+   exit 1
+fi
+
+time ${SCRIPTPATH}/4s-dump "$ENDPOINT" -f ${SCRIPTPATH}/metadata_graphs -o "$tmp_dir"
+tar -czf "${BACKUP_DIR}/4store-${datestamp}.tgz" -C "${tmp_dir}/data" data
+/bin/rm -Rf "$tmp_dir"
