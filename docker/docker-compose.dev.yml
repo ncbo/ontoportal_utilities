@@ -27,6 +27,8 @@ services:
 
   solr:
     image: ontoportal/solr-ut:0.1
+    ports:
+      - "8983:8983"
 
   mgrep:
     image: ontoportal/mgrep-ncbo:0.1
