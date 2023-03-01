@@ -1,6 +1,4 @@
-# docker compose orchestrates the start up of backend services required for ontoportal API development
-#
-# This docker compose version is suited for the development of ontologies_api, ncbo_cron,
+# nnited for the development of ontologies_api, ncbo_cron,
 # ontologies_linked_data in a non-dockerised environment, i.e where API is not run inside a
 # container but only interacts with containerized backend dependencies.
 # Most of the ontoportal projects/libraries already have docker-compose file which should be used
@@ -11,12 +9,33 @@
 
 services:
 
-  redis:
+  test:
+     build:
+       context: test
+       args:
+          RUBY_VERSION: 2.7
+     environment:
+        - BIOPORTAL_DOCKER_USER=tredmond
+        - BIOPORTAL_DOCKER_UID=1005
+        - BIOPORTAL_DOCKER_GID=1005
+        - BUNDLER_VERSION=2.3.15
+     ports:
+        - "1234:1234"
+     volumes:
+        - testvol:/home/tredmond
+
+  memcached:
+    image: memcached:1.6.15
+    container_name: memcached
+    ports:
+      - "11211:11211"
+
+  redis-ut:
     image: redis
     ports:
       - "6379:6379"
 
-  4store:
+  4store-ut:
     image: bde2020/4store
     command: >
       bash -c "4s-backend-setup --segments 4 ontoportal_kb
@@ -25,12 +44,12 @@ services:
     ports:
       - "9000:9000"
 
-  solr:
+  solr-ut:
     image: ontoportal/solr-ut:0.1
     ports:
       - "8983:8983"
 
-  mgrep:
+  mgrep-ut:
     image: ontoportal/mgrep-ncbo:0.1
     ports:
       - "55555:55555"
@@ -51,3 +70,7 @@ services:
        ; tail -f /agraph/data/agraph.log"
     profiles:
       - agraph
+
+volumes:
+    testvol:
+      external: true
