@@ -18,3 +18,7 @@ config/config.yml
 
 # Output files
 data/
+
+# emacs backups
+
+*~
