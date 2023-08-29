@@ -1,0 +1,53 @@
+# docker compose orchestrates the start up of backend services required for ontoportal API development
+#
+# This docker compose version is suited for the development of ontologies_api, ncbo_cron,
+# ontologies_linked_data in a non-dockerised environment, i.e where API is not run inside a
+# container but only interacts with containerized backend dependencies.
+# Most of the ontoportal projects/libraries already have docker-compose file which should be used
+# for unit testing
+
+# redis, solr, mgrep 4store and agraph containers are started and standard ports are mapped
+# When running on macOS you need to map mgrep port to 55556 because 55555 is in use on macOS
+
+services:
+
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+
+  4store:
+    image: bde2020/4store
+    command: >
+      bash -c "4s-backend-setup --segments 4 ontoportal_kb
+      && 4s-backend ontoportal_kb
+      && 4s-httpd -D -s-1 -p 9000 ontoportal_kb"
+    ports:
+      - "9000:9000"
+
+  solr:
+    image: ontoportal/solr-ut:0.1
+    ports:
+      - "8983:8983"
+
+  mgrep:
+    image: ontoportal/mgrep-ncbo:0.1
+    ports:
+      - "55555:55555"
+
+  agraph:
+    image: franzinc/agraph:v7.3.0
+    environment:
+      - AGRAPH_SUPER_USER=test
+      - AGRAPH_SUPER_PASSWORD=xyzzy
+    shm_size: 1g
+    ports:
+      - "10035:10035"
+    command: >
+       bash -c "/agraph/bin/agraph-control --config /agraph/etc/agraph.cfg start
+       ; agtool repos create bioportal_test
+       ; agtool users add anonymous
+       ; agtool users grant anonymous root:bioportal_test:rw
+       ; tail -f /agraph/data/agraph.log"
+    profiles:
+      - agraph
