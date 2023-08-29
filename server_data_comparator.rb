@@ -111,7 +111,7 @@ def compare_artifacts(artifact_name, ontology_acronym, artifact_hash, endpoint_u
         print_diffs(artifact_name, ontology_acronym, duo, nil, artifact_hash, nil)
       end
     elsif set1.is_a?(Array)
-      if set1 != set2
+      if set1.sort != set2.sort
         matched = false
         diffs_arr = compare_arrays(set1, set2)
         diffs = { "#{duo[0]}": diffs_arr[0], "#{duo[1]}": diffs_arr[1] }
